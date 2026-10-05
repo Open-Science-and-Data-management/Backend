@@ -5,7 +5,7 @@ REST API ของระบบติดตามความก้าวหน�
 > [!NOTE]
 > เอกสารชุดนี้เป็น **contract-first draft** เพื่อสื่อสารระหว่างทีม frontend และ backend —
 > backend ยังไม่มี implementation ทุกตัวอย่าง request/response ในเอกสารถูก reconstruct
-> จาก `er-0410.md` (ERD), `open-sci/docs/requirement.md` และ mock data ของ frontend
+> จาก [`er-0410.md`](ref/er-0410.md) (ERD), `open-sci/docs/requirement.md` และ mock data ของ frontend
 > (`ui/src/lib/mock-data.ts`) ไม่ได้ capture จาก API ที่รันจริง
 
 ## Base URL
