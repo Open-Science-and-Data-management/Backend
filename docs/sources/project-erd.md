@@ -1,8 +1,6 @@
 # Frontend data model ERD
 
-This diagram reflects the current Zod schemas and client-side stores. It is a
-logical view of the frontend model, not a claim that these are database tables
-or that the indicated references are enforced by a database.
+This diagram reflects the current Zod schemas and client-side stores. It is a logical view of the frontend model, not a claim that these are database tables or that the indicated references are enforced by a database.
 
 Last checked against the code: 18 October 2026.
 
@@ -230,18 +228,11 @@ erDiagram
     }
 ```
 
-`DATASET`, `DISTRIBUTION`, `CONTRIBUTOR`, and `COST` are nested values in the
-DMP draft, not independent records in the current client model. Likewise,
-`DMP_VERSION` describes entries in `DmpRecord.versions`, embedded in each DMP
-record. The ERD draws these nested structures separately to make their
-relationships legible. `DOMAIN_PROFILE` is a code registry
-(`src/schemas/dataset/domain-profiles.ts`), drawn because every dataset's
-`domain_metadata` is validated against it.
+`DATASET`, `DISTRIBUTION`, `CONTRIBUTOR`, and `COST` are nested values in the DMP draft, not independent records in the current client model. Likewise, `DMP_VERSION` describes entries in `DmpRecord.versions`, embedded in each DMP record. The ERD draws these nested structures separately to make their relationships legible. `DOMAIN_PROFILE` is a code registry (`src/schemas/dataset/domain-profiles.ts`), drawn because every dataset's `domain_metadata` is validated against it.
 
 ## Plan rules the schema enforces
 
-`dmpSchema` refuses a plan, and the readiness list names the field and
-focuses its input when clicked, when:
+`dmpSchema` refuses a plan, and the readiness list names the field and focuses its input when clicked, when:
 
 - the end date is before the begin date;
 - ethical issues exist but have no description;
@@ -253,235 +244,83 @@ focuses its input when clicked, when:
 
 ## Accounts and sign-up
 
-Accounts are held in the browser (`src/store/authStore.ts`); there is no
-server yet. Signing up (`/register`, `registrationSchema`) creates one `USER`
-and one `CREDENTIAL`:
+Accounts are held in the browser (`src/store/authStore.ts`); there is no server yet. Signing up (`/register`, `registrationSchema`) creates one `USER` and one `CREDENTIAL`:
 
-- **Only researchers sign up.** `role` is always `researcher`; committee and
-  chief accounts are granted by the institution, not chosen.
-- **Account type** decides who approves a researcher's plans.
-  `institutional` (มีสังกัด) researchers must name their organisation, and
-  their new projects default to `plan_mode: institutional`. `citizen`
-  (ไม่มีสังกัด) researchers have no affiliation, may give an address, and
-  their new projects default to `independent`. The default is applied when a
-  project is created; a plan then pins its own mode at first submission, as
-  below.
-- **The password lives only in `CREDENTIAL`**, as a salted SHA-256 hash. It
-  is never on `USER`, so nothing that reads users (exports, approver records,
-  contributor links) can carry it. This keeps plain text out of storage but is
-  not production security; a deployment moves sign-in behind an API.
-- **Usernames are unique** (lowercased) and **emails are unique** ignoring
-  case and spaces, checked at sign-up and when a profile's email is changed.
-  Email uniqueness is what lets the contributor form suggest *the* account
-  matching a contributor's email.
-- **Who acts.** Records written while someone is signed in are attributed to
-  them (`actingUserId()` in `src/config/current-user.ts`): project
-  membership on creation, uploads, minor edits, self-finalizing, completed
-  tasks. Notifications about a plan go to its project's researcher, whoever
-  triggered them. Seed data stays attributed to the seeded researcher.
+- **Only researchers sign up.** `role` is always `researcher`; committee and chief accounts are granted by the institution, not chosen.
+- **Account type** decides who approves a researcher's plans. `institutional` (มีสังกัด) researchers must name their organisation, and their new projects default to `plan_mode: institutional`. `citizen` (ไม่มีสังกัด) researchers have no affiliation, may give an address, and their new projects default to `independent`. The default is applied when a project is created; a plan then pins its own mode at first submission, as below.
+- **The password lives only in `CREDENTIAL`**, as a salted SHA-256 hash. It is never on `USER`, so nothing that reads users (exports, approver records, contributor links) can carry it. This keeps plain text out of storage but is not production security; a deployment moves sign-in behind an API.
+- **Usernames are unique** (lowercased) and **emails are unique** ignoring case and spaces, checked at sign-up and when a profile's email is changed. Email uniqueness is what lets the contributor form suggest _the_ account matching a contributor's email.
+- **Who acts.** Records written while someone is signed in are attributed to them (`actingUserId()` in `src/config/current-user.ts`): project membership on creation, uploads, minor edits, self-finalizing, completed tasks. Notifications about a plan go to its project's researcher, whoever triggered them. Seed data stays attributed to the seeded researcher.
 
 ## Versions and edit classification
 
-A plan becomes active at version 1, approved by a committee (institutional
-projects) or finalized by the researcher (independent projects). After that,
-the working draft is compared with the snapshot of the active version
-(`src/config/plan-diff.ts`):
+A plan becomes active at version 1, approved by a committee (institutional projects) or finalized by the researcher (independent projects). After that, the working draft is compared with the snapshot of the active version (`src/config/plan-diff.ts`):
 
-- **Minor-only edits** are applied to the active version and logged in its
-  `minor_edits`. No new version is created and nothing is reviewed.
-- **Any major edit** makes the whole batch major. Submitting creates the next
-  numbered version with status `pending`; the active version stays in force
-  until a decision.
+- **Minor-only edits** are applied to the active version and logged in its `minor_edits`. No new version is created and nothing is reviewed.
+- **Any major edit** makes the whole batch major. Submitting creates the next numbered version with status `pending`; the active version stays in force until a decision.
 
-Whether an edit is major is decided only by `isMajorTrigger` in
-`src/config/field-policy.ts`: `dmpFieldPolicy` and `datasetFieldPolicy` for
-single fields, `planListPolicy` for adding or removing list entries. The diff
-compares every field those policies name, and the "needs sign-off again" list
-shown to people is generated from the same flags. Tests enforce both.
+Whether an edit is major is decided only by `isMajorTrigger` in `src/config/field-policy.ts`: `dmpFieldPolicy` and `datasetFieldPolicy` for single fields, `planListPolicy` for adding or removing list entries. The diff compares every field those policies name, and the "needs sign-off again" list shown to people is generated from the same flags. Tests enforce both.
 
-Currently major: begin date, end date, ethical issues, Indigenous
-considerations; a research output's access, personal data, personal data
-plan, protection level, and security classification; adding or removing a
-research output. Contributor (including contact) and cost changes are minor.
+Currently major: begin date, end date, ethical issues, Indigenous considerations; a research output's access, personal data, personal data plan, protection level, and security classification; adding or removing a research output. Contributor (including contact) and cost changes are minor.
 
-**Removing a research output** from a plan in force is proposed, not applied:
-its tasks keep running until the version that drops it is put in force, and
-are cancelled (never deleted) then, with a `tasks_cancelled` notification
-(`src/store/planEffects.ts`). While the removal waits, the output still
-counts as existing, because `datasetExists` reads the version in force.
+**Removing a research output** from a plan in force is proposed, not applied: its tasks keep running until the version that drops it is put in force, and are cancelled (never deleted) then, with a `tasks_cancelled` notification (`src/store/planEffects.ts`). While the removal waits, the output still counts as existing, because `datasetExists` reads the version in force.
 
-**Plan mode is frozen at first submission**, the same way an approver is
-snapshotted at decision time. A DMP records `plan_mode` when it is first
-submitted (or self-finalized) and keeps it, so a later change to its
-project's mode, or the project's deletion, can't move a plan between
-committee approval and self-finalizing. Every reader goes through
-`planModeOf`, which takes the frozen value first; there is no project-only
-lookup for a plan. Plans submitted before freezing existed were frozen on
-load (storage version 2) with their project's mode at that time.
-Unsubmitted drafts follow their project until they're submitted. `deleteProject`
-(`src/store/projectActions.ts`) refuses while a project still has plans.
+**Plan mode is frozen at first submission**, the same way an approver is snapshotted at decision time. A DMP records `plan_mode` when it is first submitted (or self-finalized) and keeps it, so a later change to its project's mode, or the project's deletion, can't move a plan between committee approval and self-finalizing. Every reader goes through `planModeOf`, which takes the frozen value first; there is no project-only lookup for a plan. Plans submitted before freezing existed were frozen on load (storage version 2) with their project's mode at that time. Unsubmitted drafts follow their project until they're submitted. `deleteProject` (`src/store/projectActions.ts`) refuses while a project still has plans.
 
-**One revision waits at a time.** `submitRevision` is refused while another
-version is pending, since a second would be built on a version that may never
-be approved.
+**One revision waits at a time.** `submitRevision` is refused while another version is pending, since a second would be built on a version that may never be approved.
 
-**Minor fixes while a revision waits** go onto the version in force, like
-any minor edit, and the pending snapshot stays frozen. A *new* edit is one
-that matches neither the version in force nor the pending snapshot; only those
-can be saved, and only if all are minor. When the revision is approved, the
-fixes made to the version in force since its submission (the difference
-between its `based_on` snapshot and the version in force now) are replayed
-into it by entity id, and recorded in `carried_minor_edits`. A fix to an
-output the revision removed can't land, and is recorded in
-`dropped_minor_edits` rather than lost silently. If the revision is sent
-back, the fixes simply stay on the version in force. On approval the working
-copy is also rebased onto the newly approved version, keeping only edits
-nobody has saved or submitted, so a copy that didn't carry the revision can't
-read as an edit undoing it.
+**Minor fixes while a revision waits** go onto the version in force, like any minor edit, and the pending snapshot stays frozen. A _new_ edit is one that matches neither the version in force nor the pending snapshot; only those can be saved, and only if all are minor. When the revision is approved, the fixes made to the version in force since its submission (the difference between its `based_on` snapshot and the version in force now) are replayed into it by entity id, and recorded in `carried_minor_edits`. A fix to an output the revision removed can't land, and is recorded in `dropped_minor_edits` rather than lost silently. If the revision is sent back, the fixes simply stay on the version in force. On approval the working copy is also rebased onto the newly approved version, keeping only edits nobody has saved or submitted, so a copy that didn't carry the revision can't read as an edit undoing it.
 
-**Cancel on a plan waiting for its first decision** keeps the submission with
-the committee as submitted; only edits made since are dropped.
+**Cancel on a plan waiting for its first decision** keeps the submission with the committee as submitted; only edits made since are dropped.
 
-**Restoring a version** loads a version's snapshot into the working draft
-(`restoreVersion`). Restoring the version in force discards unsubmitted
-edits and records nothing, since nothing in force changes. Restoring any
-other version, an earlier approved one or one that was sent back, is from
-then on an ordinary edit: it's compared with the version in force and saved
-(minor) or submitted for sign-off (major) like any other, so a rollback can't
-skip approval. The resulting version or minor edit records `restored_from`.
-A version still waiting on a decision can't be restored.
+**Restoring a version** loads a version's snapshot into the working draft (`restoreVersion`). Restoring the version in force discards unsubmitted edits and records nothing, since nothing in force changes. Restoring any other version, an earlier approved one or one that was sent back, is from then on an ordinary edit: it's compared with the version in force and saved (minor) or submitted for sign-off (major) like any other, so a rollback can't skip approval. The resulting version or minor edit records `restored_from`. A version still waiting on a decision can't be restored.
 
 ## Preservation: nothing that records work is destroyed
 
 Tasks and their evidence are the record of work actually done, so:
 
-- **There is no way to delete a plan.** `archiveDmp` sets it aside instead,
-  and is refused while the plan is in force. Archived plans drop out of
-  My DMPs, Tasks and project views, keep everything they held, can be found
-  under My DMPs' *Archived* filter, and come back with `unarchiveDmp`.
-- **Leaving the editor** (`closeDraft`, the editor's Cancel) never deletes:
-  a plan in force only loses unsubmitted edits; an unsubmitted plan is
-  archived.
-- **A task with recorded work can't be deleted**: evidence attached, a
-  ticked step, or a completion (`hasRecordedWork`). It can be cancelled,
-  keeping its evidence. Only a task nobody has started can be deleted.
-- **A finished task can't be cancelled**, which would overwrite the record
-  of its completion; it can only be reopened.
-- **A cancellation records what it replaced** (`cancelled_from`, the reason,
-  and for a removed output its title). When a version brings an output back,
-  tasks cancelled by its removal are *offered* for reopening, never reopened
-  automatically, since their cancellation went through sign-off. Each is
-  chosen individually, returns to the status it had, and is relinked to the
-  returned output (matched by id, or by the recorded title if it came back
-  under a new id). Tasks cancelled by hand aren't offered.
-- `deleteProject` refuses while a project has plans, archived ones included,
-  since deleting it would orphan them.
+- **There is no way to delete a plan.** `archiveDmp` sets it aside instead, and is refused while the plan is in force. Archived plans drop out of My DMPs, Tasks and project views, keep everything they held, can be found under My DMPs' _Archived_ filter, and come back with `unarchiveDmp`.
+- **Leaving the editor** (`closeDraft`, the editor's Cancel) never deletes: a plan in force only loses unsubmitted edits; an unsubmitted plan is archived.
+- **A task with recorded work can't be deleted**: evidence attached, a ticked step, or a completion (`hasRecordedWork`). It can be cancelled, keeping its evidence. Only a task nobody has started can be deleted.
+- **A finished task can't be cancelled**, which would overwrite the record of its completion; it can only be reopened.
+- **A cancellation records what it replaced** (`cancelled_from`, the reason, and for a removed output its title). When a version brings an output back, tasks cancelled by its removal are _offered_ for reopening, never reopened automatically, since their cancellation went through sign-off. Each is chosen individually, returns to the status it had, and is relinked to the returned output (matched by id, or by the recorded title if it came back under a new id). Tasks cancelled by hand aren't offered.
+- `deleteProject` refuses while a project has plans, archived ones included, since deleting it would orphan them.
 
 ## Calendar dates
 
-Dates without a time of day (plan begin/end, task start/end, domain dates)
-are stored as a `Date` at midnight UTC and read only through
-`src/utils/calendarDate.ts`. Dates saved earlier at local midnight are
-recognised and read as the day that was picked. Exports write them as
-`YYYY-MM-DD`. Timestamps (`created_at`, `decided_at`, `uploaded_at`, …) are
-full date-times and unaffected.
+Dates without a time of day (plan begin/end, task start/end, domain dates) are stored as a `Date` at midnight UTC and read only through `src/utils/calendarDate.ts`. Dates saved earlier at local midnight are recognised and read as the day that was picked. Exports write them as `YYYY-MM-DD`. Timestamps (`created_at`, `decided_at`, `uploaded_at`, …) are full date-times and unaffected.
 
 ## Standards exports
 
-Exports are projections of a validated plan, not stored entities. Once a plan
-has a version in force, the export describes **that version's snapshot**, not
-the working draft: edits that haven't been saved (minor) or approved (major)
-are left out, and the export panel says so. Before the first approval, the
-draft is exported, with an approval status of `not submitted` or `submitted`.
+Exports are projections of a validated plan, not stored entities. Once a plan has a version in force, the export describes **that version's snapshot**, not the working draft: edits that haven't been saved (minor) or approved (major) are left out, and the export panel says so. Before the first approval, the draft is exported, with an approval status of `not submitted` or `submitted`.
 
 | Export | Mapper | Validated against |
 | --- | --- | --- |
 | GCWG-RDA maDMP v3.0 | `src/schemas/madmp/mapper.ts` | `src/schemas/madmp/vendor/` |
 | RDA DMP Common Standard v1.3 | `src/schemas/rda/mapper.ts` | `src/schemas/rda/vendor/` |
 
-The maDMP export takes its `approval` block from the DMP status, plan mode,
-and the active version's `approver`. Independent plans export as
-`not applicable`. RDA has no approval block or classification fields;
-protection and security travel in `security_and_privacy`. Both exports carry
-`domain` and `domain_metadata` as extensions.
+The maDMP export takes its `approval` block from the DMP status, plan mode, and the active version's `approver`. Independent plans export as `not applicable`. RDA has no approval block or classification fields; protection and security travel in `security_and_privacy`. Both exports carry `domain` and `domain_metadata` as extensions.
 
 ## Open questions
 
-Edge cases found in review that need a decision on intended behaviour before
-they're built.
+Edge cases found in review that need a decision on intended behaviour before they're built.
 
-1. ~~**Deleting a plan leaves its tasks.**~~ Resolved: plans can't be
-   deleted. Archiving is refused while a plan is in force, and otherwise keeps
-   the plan and its tasks intact. See *Preservation* above.
-2. ~~**No way back after a send-back.**~~ Resolved: "Discard changes"
-   restores the version in force, and a sent-back revision can be restored to
-   fix and resubmit. See *Restoring a version* above.
-3. ~~**Plan mode for unsubmitted plans.**~~ Resolved: the mode is frozen at
-   first submission. Until then a draft follows its project, by design.
-4. **Generated ids repeat across plans.** The demo analysis gives every plan
-   the same ids (`seed-dataset-1`, `seed-contributor-1`, …), so exported
-   dataset ids and contributor identifiers collide between different DMPs.
-   Real analysis must mint unique ids; should exports also namespace ids by
-   plan (for example `dmp-id/dataset-id`) as a safeguard?
+1. ~~**Deleting a plan leaves its tasks.**~~ Resolved: plans can't be deleted. Archiving is refused while a plan is in force, and otherwise keeps the plan and its tasks intact. See _Preservation_ above.
+2. ~~**No way back after a send-back.**~~ Resolved: "Discard changes" restores the version in force, and a sent-back revision can be restored to fix and resubmit. See _Restoring a version_ above.
+3. ~~**Plan mode for unsubmitted plans.**~~ Resolved: the mode is frozen at first submission. Until then a draft follows its project, by design.
+4. **Generated ids repeat across plans.** The demo analysis gives every plan the same ids (`seed-dataset-1`, `seed-contributor-1`, …), so exported dataset ids and contributor identifiers collide between different DMPs. Real analysis must mint unique ids; should exports also namespace ids by plan (for example `dmp-id/dataset-id`) as a safeguard?
 
 ## Review of the proposed ERD
 
-- **DMP cardinality:** the code allows a DMP to have no `project_id`, and one
-  project can have multiple DMPs. A mandatory one-to-one relationship does not
-  match the schemas or seeded data.
-- **Project fields:** the schema includes `plan_mode`. `ProjectStatus` is
-  `draft | active | done`.
-- **DMP fields:** `DmpForm` carries `alternate_identifier`, begin/end dates,
-  ethical and indigenous information, contributor/cost/dataset arrays, and
-  `schema_version`. There is no `current_version`, `generated_by`, `contact`,
-  or DMP-level access or classification field; the contact is the contributor
-  with `is_contact`, and the export rolls classifications up from datasets.
-  The active revision is `active_version`, and status/timestamps plus summary
-  fields are held by `DmpRecord`.
-- **Versions and approvals:** versions exist as nested `PlanVersion` values;
-  there is no separate `version_id` or `APPROVAL` entity. A decision is
-  recorded on the version itself: `status`, `decided_at`, `decided_by`,
-  `note`, and `approver` (name, position, email, and `user_id` when the
-  approver is a project committee member). One decision per version, so a
-  committee with several reviewers would need its own table.
-- **Tasks and files:** tasks include cancelled status, priority, lifecycle
-  stage, checklist, evidence, completion fields, and optional dataset/file
-  references. File purpose includes `task_deliverable` and `evidence`. An
-  optional task `file_id` may point to a file, but evidence references are
-  polymorphic strings (file, URL, or DOI) rather than guaranteed file FKs.
-  `source_version_id` is declared but never written, so tasks don't record
-  which plan version produced them.
-- **Notifications:** the type values are `dmp_submitted`, `dmp_approved`,
-  `dmp_finalized`, `tasks_generated`, `tasks_cancelled`,
-  `proposal_superseded`, `review_requested` (to every reviewer when a plan or
-  revision is submitted), and `dmp_returned` (to the researcher when a
-  version is sent back). A
-  notification has title/message/link, optional DMP and project IDs, and
-  optional `read_at`; it has no generic `related_entity` or `is_read` field.
-- **AI generation:** there is no `AI_GENERATION` record with inputs, outputs,
-  or token totals. AI activity is a separate persisted thread store of
-  user/assistant turns and lightweight events, scoped by DMP ID when available
-  (or stored as unscoped activity). Its actions are `analyze_proposal`,
-  `regenerate_field`, `batch_regenerate`, `generate_tasks`, and
-  `redraft_steps`.
-- **Contributors and users:** a contributor may be linked to an account
-  through the optional `contributor.user_id`; collaborators without accounts
-  stay unlinked. The contributor form offers the account whose email matches
-  (case-insensitive) but never links on its own. One account links to at most
-  one contributor per plan. Changing the link is a minor edit like any other
-  contributor change, and the change list shows account names, not ids. The
-  link stays internal: maDMP and RDA exports identify people by ORCID or
-  email. The link is a plain string, so an account removed later leaves an
-  "Unknown account" that the form flags. Nothing acts on the link yet;
-  assigning tasks to contributors and notifying them are still to be built.
-- **IDs and constraints:** many input-schema IDs are optional, and references
-  are plain strings rather than validated foreign keys. Nested IDs (dataset,
-  contributor, cost) are unique only within their plan. `(project_id,
-  user_id)` is unique in `PROJECT_MEMBER` by the store, not the schema:
-  `addMember` refuses an existing pair (and won't change a role as a side
-  effect), and duplicates in saved data are dropped on load. Treat the other
-  PK/FK labels here as logical relational recommendations, not enforced
-  constraints.
+- **DMP cardinality:** the code allows a DMP to have no `project_id`, and one project can have multiple DMPs. A mandatory one-to-one relationship does not match the schemas or seeded data.
+- **Project fields:** the schema includes `plan_mode`. `ProjectStatus` is `draft | active | done`.
+- **DMP fields:** `DmpForm` carries `alternate_identifier`, begin/end dates, ethical and indigenous information, contributor/cost/dataset arrays, and `schema_version`. There is no `current_version`, `generated_by`, `contact`, or DMP-level access or classification field; the contact is the contributor with `is_contact`, and the export rolls classifications up from datasets. The active revision is `active_version`, and status/timestamps plus summary fields are held by `DmpRecord`.
+- **Versions and approvals:** versions exist as nested `PlanVersion` values; there is no separate `version_id` or `APPROVAL` entity. A decision is recorded on the version itself: `status`, `decided_at`, `decided_by`, `note`, and `approver` (name, position, email, and `user_id` when the approver is a project committee member). One decision per version, so a committee with several reviewers would need its own table.
+- **Tasks and files:** tasks include cancelled status, priority, lifecycle stage, checklist, evidence, completion fields, and optional dataset/file references. File purpose includes `task_deliverable` and `evidence`. An optional task `file_id` may point to a file, but evidence references are polymorphic strings (file, URL, or DOI) rather than guaranteed file FKs. `source_version_id` is declared but never written, so tasks don't record which plan version produced them.
+- **Notifications:** the type values are `dmp_submitted`, `dmp_approved`, `dmp_finalized`, `tasks_generated`, `tasks_cancelled`, `proposal_superseded`, `review_requested` (to every reviewer when a plan or revision is submitted), and `dmp_returned` (to the researcher when a version is sent back). A notification has title/message/link, optional DMP and project IDs, and optional `read_at`; it has no generic `related_entity` or `is_read` field.
+- **AI generation:** there is no `AI_GENERATION` record with inputs, outputs, or token totals. AI activity is a separate persisted thread store of user/assistant turns and lightweight events, scoped by DMP ID when available (or stored as unscoped activity). Its actions are `analyze_proposal`, `regenerate_field`, `batch_regenerate`, `generate_tasks`, and `redraft_steps`.
+- **Contributors and users:** a contributor may be linked to an account through the optional `contributor.user_id`; collaborators without accounts stay unlinked. The contributor form offers the account whose email matches (case-insensitive) but never links on its own. One account links to at most one contributor per plan. Changing the link is a minor edit like any other contributor change, and the change list shows account names, not ids. The link stays internal: maDMP and RDA exports identify people by ORCID or email. The link is a plain string, so an account removed later leaves an "Unknown account" that the form flags. Nothing acts on the link yet; assigning tasks to contributors and notifying them are still to be built.
+- **IDs and constraints:** many input-schema IDs are optional, and references are plain strings rather than validated foreign keys. Nested IDs (dataset, contributor, cost) are unique only within their plan. `(project_id, user_id)` is unique in `PROJECT_MEMBER` by the store, not the schema: `addMember` refuses an existing pair (and won't change a role as a side effect), and duplicates in saved data are dropped on load. Treat the other PK/FK labels here as logical relational recommendations, not enforced constraints.
 
 ---
 

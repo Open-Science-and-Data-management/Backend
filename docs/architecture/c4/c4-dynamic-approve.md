@@ -1,10 +1,10 @@
 # C4 — Dynamic Diagram: Approve revision (flow #9)
 
-*แหล่งอ้างอิง: `docs/architecture/arc42.md` หมวด 5.3 · `docs/architecture/requirement.md` หมวด 4.5–4.6, หมวด 4.9, หมวด 5.1, หมวด 5.3*
+_แหล่งอ้างอิง: `docs/architecture/arc42.md` หมวด 5.3 · `docs/architecture/requirement.md` หมวด 4.5–4.6, หมวด 4.9, หมวด 5.1, หมวด 5.3_
 
-flow ที่ซับซ้อนที่สุดของระบบ — กรรมการ approve เวอร์ชัน pending ระหว่างที่
-version in force มี minor fixes เกิดขึ้นหลังจากที่ revision ถูก submit ไปแล้ว
-ทุกอย่างในขั้นตอน 4–7 เกิดใน **transaction Drizzle เดียว** (atomic)
+นี่คือ flow ที่ซับซ้อนที่สุดของระบบ สถานการณ์คือ: กรรมการกด approve เวอร์ชัน pending ซึ่งถูก submit ไปก่อนหน้านั้น แต่ระหว่างที่รออยู่ version in force ได้มี minor fixes เกิดขึ้นเพิ่มแล้ว คำถามคือ fix เหล่านั้นจะเป็นอย่างไรเมื่อเวอร์ชันใหม่กลายเป็นตัวมีผล — คำตอบอยู่ที่ขั้นตอน 2 และ 4 (carry / drop)
+
+ขั้นตอนที่ 4–7 ทั้งหมดรวมอยู่ใน **transaction Drizzle เดียว** หมายความว่าสำเร็จพร้อมกันทั้งชุด หรือถ้าพลาดก็ย้อนกลับหมด (atomic) ไม่มีทางอยู่ครึ่ง ๆ กลาง ๆ
 
 ```mermaid
 C4Dynamic
@@ -36,18 +36,14 @@ C4Dynamic
   UpdateRelStyle(notifSvc, fe, $offsetX="80")
 ```
 
-## กฎ preservation ที่ flow นี้ต้องไม่ละเมิด (requirement หมวด 4.5, หมวด 4.9, หมวด 5.3)
+## กฎ preservation ที่ flow นี้ห้ามละเมิด (requirement หมวด 4.5, หมวด 4.9, หมวด 5.3)
 
-- **Fix ที่ลง output ที่ revision นั้นลบทิ้ง** ไม่หายเงียบ ๆ — จดใน
-  `dropped_minor_edits` (ขั้นตอนที่ 4)
-- **Working copy ถูก rebase** — เหลือเฉพาะการแก้ที่ยังไม่มีใครบันทึก/ส่ง (ขั้นตอนที่ 5)
-- **Tasks ถูก cancel ไม่ใช่ลบ** — จด `cancelled_from`, `cancel_reason: output_removed`,
-  ชื่อ output ไว้ตามหาเมื่อ output กลับมา — และจะถูก**เสนอให้เปิดคืน** ไม่เปิดเอง
-  เพราะการ cancel ของมันผ่านการอนุมัติมาแล้ว
-- **เวอร์ชันแรกของแผน institutional** — ขั้นตอนที่ 6 สร้างชุด tasks แรก
-  (`tasks_generated = true` + notification `tasks_generated`, requirement หมวด 5.1)
-- **การตัดสินบันทึกบนตัวเวอร์ชัน** — หนึ่งเวอร์ชัน หนึ่ง decision, `approver`
- เป็น snapshot ของผู้อนุมัติ ณ ตอนตัดสิน (หมวด 4.6)
+เป้าหมายร่วมของทุกข้อคือ: **งานของใครไม่หายไปเงียบ ๆ ไม่ว่ากรณีใด**
 
-การส่งกลับ (return) ใช้ flow เดียวกันแต่ไม่มีขั้นตอน 4–6: fix เหล่านั้นอยู่กับ
-version in force ตามเดิม และทำงานต่อจาก version in force ได้ทันทีโดยไม่ต้อง restore
+- **Fix ที่ลง output ซึ่ง revision นี้ลบทิ้ง** ไม่หายเงียบ ๆ — จดไว้ใน `dropped_minor_edits` (ขั้นตอนที่ 4) ใครอยากตามรอยยังตามได้
+- **Working copy ของนักวิจัยถูก rebase** — ขั้นตอนที่ 5 ปรับ draft ที่ค้างแก้อยู่ให้ตั้งอยู่บน snapshot ใหม่ โดยเหลือเฉพาะการแก้ที่ยังไม่มีใครบันทึก/ส่ง (ส่วนที่ซ้ำกับที่ระบบจัดการไปแล้วถูกทิ้งไป)
+- **Tasks ถูก cancel ไม่ได้ถูกลบ** — ถ้า output ที่ task ผูกอยู่ถูกลบ ระบบ cancel task (ขั้นตอนที่ 6) แต่เก็บแถวไว้พร้อม `cancelled_from`, `cancel_reason: output_removed` และชื่อ output เดิม เพื่อตามหาได้เมื่อ output กลับมา และถ้ากลับมาจริง ระบบจะ**เสนอให้เปิดคืน** — ไม่เปิดเอง เพราะการ cancel ของมันก็ผ่านการอนุมัติมาแล้วเช่นกัน
+- **เวอร์ชันแรกของแผน institutional เริ่มต้นงานให้** — ขั้นตอนที่ 6 สร้างชุด tasks แรก (`tasks_generated = true` + notification `tasks_generated`, requirement หมวด 5.1)
+- **การตัดสินถูกบันทึกบนตัวเวอร์ชัน** — หนึ่งเวอร์ชันมี decision ได้ครั้งเดียว และ `approver` เป็น snapshot ของผู้อนุมัติ ณ ตอนตัดสิน (หมวด 4.6)
+
+**กรณีส่งกลับ (return)** ใช้ flow เดียวกันนี้แต่ข้ามขั้นตอน 4–6: fix เหล่านั้นยังอยู่กับ version in force ตามเดิมอยู่แล้ว จึงทำงานต่อจาก version in force ได้ทันที ไม่ต้อง restore อะไร

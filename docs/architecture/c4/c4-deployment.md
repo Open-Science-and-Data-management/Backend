@@ -1,9 +1,10 @@
 # C4 — Deployment Diagram
 
-*แหล่งอ้างอิง: `docs/architecture/arc42.md` หมวด 4.2, หมวด 7, หมวด 8.2, หมวด 8.7*
+_แหล่งอ้างอิง: `docs/architecture/arc42.md` หมวด 4.2, หมวด 7, หมวด 8.2, หมวด 8.7_
 
-deploy เป็น **VM เดียวของสถาบัน + docker-compose** — instance เดียว, scale แนวตั้ง,
-release = restart สั้น ๆ (ยอมรับได้ที่โหลด ~200/วัน, peak ~2,000)
+ระดับนี้ลงมาถึงโลกจริง: **ระบบรันอยู่บนเครื่องอะไร อะไรอยู่ใน container ไหน ข้อมูลเก็บไว้ที่ไหน**
+
+ระบบ deploy เป็น **VM เดียวของสถาบัน + docker-compose** — instance เดียว, scale แนวตั้ง การ release ใหม่คือ restart สั้น ๆ หนึ่งครั้ง (รับได้เพราะโหลดแค่ ~200/วัน พีค ~2,000)
 
 ```mermaid
 C4Deployment
@@ -53,15 +54,14 @@ C4Deployment
 ## การดำเนินงาน (`docs/architecture/arc42.md` หมวด 7)
 
 | เรื่อง | แนวทาง |
-|---|---|
-| Migration | SQL files (drizzle-kit) commit ลง repo — review/replay ได้ |
-| Backup | `pg_dump` ตามรอบ + snapshot volume ไฟล์ — หน้าที่ ops ของสถาบัน (runbook) |
-| Release | restart สั้น ๆ — ยอมรับได้ที่ scale นี้ |
-| Config | `config.json` (ค่า tunable) + `.env` (credentials เท่านั้น: `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL`) |
-| TLS | Caddy จัดการ — app ไม่เห็น TLS |
+| --- | --- |
+| Migration | เป็น SQL files (drizzle-kit) commit ลง repo — ดูย้อน/สั่งซ้ำได้ |
+| Backup | `pg_dump` ตามรอบ + snapshot volume ไฟล์ — เป็นหน้าที่ ops ของสถาบัน (มี runbook) |
+| Release | restart สั้น ๆ ครั้งเดียว — ยอมรับได้ที่ scale นี้ |
+| Config | แยกสองที่: `config.json` (ค่า tunable) + `.env` (credentials เท่านั้น: `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL`) |
+| TLS | Caddy จัดการให้หมด — app ไม่เห็น TLS เลย |
 
 ## ขอบเขตที่ตัดสินไว้แล้ว
 
-- **Scale ออก**: interface เตรียมไว้แล้ว — สลับ `DiskStorage`→`S3Storage`,
-  `InProcessEventBus`→Redis pub/sub โดยไม่แตะ domain logic
-- **Email verification**: defer — จดเป็นช่องที่รู้ตัว (`docs/architecture/arc42.md` หมวด 11)
+- **การ scale ออก (เพิ่มจำนวน instance)**: ทางเตรียมไว้แล้ว — เพราะ I/O อยู่หลัง port สลับ `DiskStorage`→`S3Storage`, `InProcessEventBus`→Redis pub/sub ได้โดยไม่แตะ domain logic แต่ยังไม่ทำในตอนนี้
+- **Email verification**: defer ไว้ก่อน — จดเป็นช่องที่รู้ตัวใน `docs/architecture/arc42.md` หมวด 11
