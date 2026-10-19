@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบ DMP คืออะไร</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fdfcf8;
+    --card: #ffffff;
+    --accent: #3a6ea5;
+    --accent-soft: #e7eff7;
+    --border: #e6e3d8;
+
+    /* semantic */
+    --green: #2e7d4f;
+    --green-soft: #e6f2ea;
+    --red: #a5433a;
+    --red-soft: #f7e9e7;
+    --amber: #8a6d1f;
+    --amber-soft: #f7f1de;
+    --ink: #2d2c28;
+    --muted: #6b685f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Sarabun', sans-serif;
+    font-weight: 400;
+    font-size: 17px;
+    line-height: 1.7;
+  }
+
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 80px 16px 64px;
+  }
+
+  h1 {
+    font-weight: 500;
+    font-size: 34px;
+    line-height: 1.3;
+    margin: 0 0 8px;
+  }
+
+  h2 {
+    font-weight: 500;
+    font-size: 25px;
+    line-height: 1.3;
+    margin: 48px 0 12px;
+  }
+
+  h2:first-of-type { margin-top: 56px; }
+
+  h3 {
+    font-weight: 500;
+    font-size: 19px;
+    line-height: 1.35;
+    margin: 32px 0 8px;
+  }
+
+  p { margin: 0 0 14px; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 26px; }
+  li { margin-bottom: 6px; }
+
+  a { color: var(--accent); }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  code {
+    font-family: ui-monospace, 'Sarabun', monospace;
+    font-size: 14.5px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1px 6px;
+  }
+
+  pre {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code { border: none; padding: 0; background: none; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border);
+    font-size: 15.5px;
+    line-height: 1.5;
+    margin: 0 0 14px;
+  }
+  th {
+    background: var(--accent-soft);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 12px;
+  }
+  td {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 0 0 16px;
+  }
+
+  .tip {
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 16px 0;
+  }
+  .tip.green { border-color: var(--green); background: var(--green-soft); }
+  .tip.red { border-color: var(--red); background: var(--red-soft); }
+  .tip.amber { border-color: var(--amber); background: var(--amber-soft); }
+  .tip p:last-child { margin-bottom: 0; }
+  .tip .tip-label {
+    font-size: 14px;
+    letter-spacing: 0.4px;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .tip.green .tip-label { color: var(--green); }
+  .tip.red .tip-label { color: var(--red); }
+  .tip.amber .tip-label { color: var(--amber); }
+
+  .muted { color: var(--muted); }
+
+  figure { margin: 20px 0 24px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption {
+    font-size: 14.5px;
+    color: var(--muted);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  svg text { font-family: 'Sarabun', sans-serif; }
+  svg rect, svg path, svg line { stroke-width: 1px; }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 28px; }
+    h2 { font-size: 22px; }
+    body { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>ระบบ DMP คืออะไร?</h1>
+<p class="muted">อธิบายง่าย ๆ ทีละขั้นตอน จาก sequence diagrams ทั้ง 14 flows</p>
+
+<h2>เริ่มจากคำถามตรง ๆ — DMP คืออะไร</h2>
+<p>DMP ย่อมาจาก <strong>Data Management Plan</strong> หรือ "แผนการจัดการข้อมูลวิจัย" ฟังดูเป็นศัพท์เทคนิค แต่แท้จริงแล้วมันคือเอกสารที่ตอบคำถามง่าย ๆ เกี่ยวกับข้อมูลในงานวิจัยชิ้นหนึ่ง:</p>
+<ul>
+  <li>งานวิจัยนี้จะเก็บข้อมูลอะไรบ้าง?</li>
+  <li>ข้อมูลจะเก็บไว้ที่ไหน ใครเข้าถึงได้บ้าง?</li>
+  <li>จบงานแล้วจะแบ่งปันข้อมูลให้คนอื่นใช้ต่ออย่างไร?</li>
+  <li>มีเรื่องจริยธรรมหรือข้อมูลส่วนบุคคลที่ต้องระวังไหม?</li>
+</ul>
+<p>ลองนึกว่างานวิจัยเป็นเหมือนการเดินทาง ข้อมูลก็คือสัมภาระ DMP ก็คือ "แผนการจัดการสัมภาระ" ที่เขียนไว้ล่วงหน้าว่าจะแพ็คอะไร เก็บไว้ตรงไหน และจะเอาออกมาแบ่งกันใช้ยังไงตอนถึงที่หมาย</p>
+
+<div class="tip">
+  <p class="tip-label">ทำไมต้องมีแผนแบบนี้?</p>
+  <p>เพราะเมื่องานวิจัยเสร็จไปแล้ว ถ้าไม่มีใครรู้ว่าข้อมูลอยู่ไหน เข้าถึงยังไง ข้อมูลนั้นก็เหมือนหายไปเลย — เงินทุนวิจัยที่จ่ายไปก็เท่ากับเสียเปล่าครึ่งหนึ่ง มหาวิทยาลัยและหน่วยงานทุนจึงให้เขียนแผนนี้ก่อนเริ่มงาน</p>
+</div>
+
+<h2>ระบบนี้ (backend ตัวนี้) ทำอะไรให้เรา</h2>
+<p>ระบบนี้คือ "โรงงานผลิตและอนุมัติแผน DMP" ที่พานักวิจัยไปตั้งแต่ต้นจนจบ ในหนึ่งรอบชีวิตของแผน มันทำ 4 อย่างใหญ่ ๆ:</p>
+<ol>
+  <li><strong>ช่วยเขียน</strong> — ให้ AI อ่าน proposal แล้วเสนอร่างแผนให้ นักวิจัยแก้ต่อได้ทั้งหมด</li>
+  <li><strong>จัดการการอนุมัติ</strong> — ส่งแผนให้กรรมการตรวจ ตีกลับกลับมาแก้ ส่งใหม่ จนอนุมัติ</li>
+  <li><strong>เปลี่ยนแผนเป็นงานจริง</strong> — พอแผนอนุมัติ ระบบแตกแผนออกเป็น task ที่ทำได้ทีละอย่าง พร้อม checklist และหลักฐาน</li>
+  <li><strong>เก็บทุกเวอร์ชันไว้หมด</strong> — แก้ครั้งไหน ใครอนุมัติ ตอนไหน ย้อนดูได้หมด และ export ออกมาเป็นไฟล์มาตรฐานสากลได้</li>
+</ol>
+
+<figure>
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="var(--muted)" stroke="none"/>
+    </marker>
+  </defs>
+  <rect x="8" y="60" width="120" height="80" rx="8" fill="var(--card)" stroke="var(--border)"/>
+  <text x="68" y="93" text-anchor="middle" font-size="14.5" fill="var(--ink)">ร่างแผน</text>
+  <text x="68" y="113" text-anchor="middle" font-size="13" fill="var(--muted)">draft</text>
+
+  <path d="M128,100 L178,100" stroke="var(--muted)" marker-end="url(#ar)"/>
+
+  <rect x="180" y="60" width="120" height="80" rx="8" fill="var(--amber-soft)" stroke="var(--amber)"/>
+  <text x="240" y="93" text-anchor="middle" font-size="14.5" fill="var(--ink)">ส่งตรวจ</text>
+  <text x="240" y="113" text-anchor="middle" font-size="13" fill="var(--muted)">pending</text>
+
+  <path d="M300,100 L350,100" stroke="var(--muted)" marker-end="url(#ar)"/>
+  <path d="M240,140 L240,168 L108,168 L108,140" fill="none" stroke="var(--red)" marker-end="url(#ar)"/>
+  <text x="174" y="183" text-anchor="middle" font-size="12.5" fill="var(--red)">ตีกลับ → กลับไปแก้</text>
+
+  <rect x="352" y="60" width="120" height="80" rx="8" fill="var(--green-soft)" stroke="var(--green)"/>
+  <text x="412" y="93" text-anchor="middle" font-size="14.5" fill="var(--ink)">อนุมัติ</text>
+  <text x="412" y="113" text-anchor="middle" font-size="13" fill="var(--muted)">แผนมีผล</text>
+
+  <path d="M472,100 L522,100" stroke="var(--muted)" marker-end="url(#ar)"/>
+
+  <rect x="524" y="60" width="120" height="80" rx="8" fill="var(--card)" stroke="var(--border)"/>
+  <text x="584" y="93" text-anchor="middle" font-size="14.5" fill="var(--ink)">งาน (tasks)</text>
+  <text x="584" y="113" text-anchor="middle" font-size="13" fill="var(--muted)">ทำได้ทีละอย่าง</text>
+
+  <text x="68" y="45" text-anchor="middle" font-size="12.5" fill="var(--muted)">เขียน + AI ช่วย</text>
+  <text x="240" y="45" text-anchor="middle" font-size="12.5" fill="var(--muted)">กรรมการตรวจ</text>
+  <text x="412" y="45" text-anchor="middle" font-size="12.5" fill="var(--muted)">version in force</text>
+  <text x="584" y="45" text-anchor="middle" font-size="12.5" fill="var(--muted)">ติดตามจนจบ</text>
+</svg>
+<figcaption>ภาพรวมชีวิตของแผนหนึ่งฉบับ: เขียน → ส่งตรวจ → อนุมัติ → แตกเป็นงาน</figcaption>
+</figure>
+
+<p>ถัดจากนี้เดินทีละขั้นตอนตามเอกสาร 14 flows โดยแบ่งเป็น 4 กลุ่มเหมือนต้นฉบับ</p>
+
+<hr>
+
+<h2>กลุ่ม A — เริ่มต้น: บัญชีและโครงการ</h2>
+
+<h3>1. Sign-up / Sign-in — เปิดบัญชีเข้าใช้งาน</h3>
+<p>นักวิจัยสมัครเองได้ โดยกรอก username, email และรหัสผ่าน ระบบจะตรวจว่า username กับ email ไม่ซ้ำกับใคร ถ้าซ้ำจะปฏิเสธแล้วบอกด้วยว่าซ้ำที่ช่องไหน ถ้าผ่านหมด รหัสผ่านจะไม่ถูกเก็บเป็นข้อความตรง ๆ แต่ถูก "หมัก" ด้วยวิธีเข้ารหัสแบบ bcrypt/argon2id เก็บเป็น hash — แม้แต่คนดูแลระบบก็อ่านรหัสผ่านจริงไม่ได้</p>
+<p>ตอน sign-in ระบบเทียบ hash แล้วออก token ให้ และทุกอย่างที่ทำต่อจากนี้จะถูกจดว่า "ใคร" เป็นคนทำเสมอ</p>
+
+<h3>2. สร้างโครงการ + อัปโหลด proposal</h3>
+<p>โครงการวิจัยหนึ่งงาน = PROJECT หนึ่งอันในระบบ นักวิจัยตั้งชื่อ ใส่คำอธิบาย แล้วอัปโหลด proposal (ไฟล์ .docx) ของงาน</p>
+<p>จุดสำคัญมีสองอย่าง:</p>
+<ul>
+  <li><strong>โหมดของแผน (plan_mode)</strong> — ถ้านักวิจัยเป็นบุคลากรมหาวิทยาลัย (institutional) แผนจะต้องผ่านกรรมการ ถ้าเป็นประชาชนทั่วไป (independent) จะสรุปแผนเองได้ โหมดนี้ตั้งค่าเริ่มต้นตามประเภทบัญชีของคนสร้างโครงการ</li>
+  <li><strong>proposal ตัวเดิมไม่หาย</strong> — ถ้าเอา proposal ใหม่มาแทน ไฟล์เก่าไม่ถูกลบ แค่ถูกจดว่า "ถูกแทนแล้ว" (superseded) และมีการแจ้งเตือนคนเกี่ยวข้อง</li>
+</ul>
+
+<hr>
+
+<h2>กลุ่ม B — การเขียนแผน</h2>
+
+<h3>3. AI สร้างแผนจาก proposal</h3>
+<p>แทนที่นักวิจัยจะนั่งเขียนแผนจากศูนย์ ระบบให้ AI ช่วยเป็นผู้ช่วยร่างแผน เลือกได้หลาย action เช่น "อ่าน proposal ให้เข้าใจก่อน" "ร่างฟิลด์นี้ใหม่" "ร่างชุด task ให้หน่อย"</p>
+<p>วิธีที่มันทำงาน (อ่านจาก diagram แล้วเข้าใจง่าย ๆ):</p>
+<ul>
+  <li>AI เป็นบริการภายนอก (OpenRouter) ระบบเรียกด้วย key ของระบบเอง ไม่ใช่ผู้ใช้</li>
+  <li>AI ทำงานเป็นวงจร — มันจะ "ขอดูข้อมูล" จากระบบ (อ่าน proposal, อ่านร่างปัจจุบัน, อ่าน metadata ของสาขา) แล้วค่อย ๆ ตอบ ไม่ได้เดาลอย ๆ และไม่มีสิทธิ์เขียนทับแผนเอง</li>
+  <li>ตอบกลับแบบ stream — เห็นข้อความไหลออกมาทีละชิ้นเหมือนคนพิมพ์อยู่</li>
+  <li>มี <strong>โควตา token รายคน</strong> — ก่อนเริ่ม run เช็กว่างบพอไหม ถ้าไม่พอปฏิเสธตั้งแต่ต้น ถ้า run กลางทางล้นโควตาก็ปล่อยจบ run นั้นก่อนแล้วค่อยนับเต็ม</li>
+  <li>ทุกอย่างที่ AI เสนอเป็นแค่ <strong>"ข้อเสนอ"</strong> — นักวิจัยแก้ได้ทุกจุดก่อนกดบันทึกลงร่างจริง</li>
+</ul>
+
+<div class="tip">
+  <p class="tip-label">เทียบให้เห็นภาพ</p>
+  <p>AI ในระบบนี้เหมือน "ผู้ช่วยร่างเอกสาร" ที่มีห้องสมุดให้เปิดได้ แต่ไม่มีปากกา — มันบอกได้ว่าควรเขียนว่าอะไร แต่คนที่ลงนามลงในกระดาษคือนักวิจัยเสมอ</p>
+</div>
+
+<h3>4. แก้ไข draft + validation</h3>
+<p>นี่คือวงจร "แก้ → บันทึก → แก้ต่อ" ที่ทำซ้ำได้จนพอใจ ระบบไม่ได้รับทุกอย่างเงียบ ๆ แต่ตรวจกฎทุกครั้ง เช่น:</p>
+<ul>
+  <li>วันสิ้นสุดต้องไม่มาก่อนวันเริ่มต้น</li>
+  <li>บอกว่ามีประเด็นจริยธรรม ต้องอธิบายด้วยว่าคืออะไร</li>
+  <li>ผู้ติดต่อ (contact) ต้องมีพอดีหนึ่งคน และต้องมี email</li>
+  <li>แผนที่เปิดให้คนภายนอกใช้ข้อมูล (open) ต้องระบุ license</li>
+</ul>
+<p>ถ้าไม่ผ่าน ระบบปฏิเสธพร้อมระบุชื่อฟิลด์ที่ผิด — ผู้ใช้คลิกเข้าไปแก้จุดนั้นได้เลย ไม่ต้องไล่หาเอง ณ จุดนี้แผนยังเป็นแค่ "ร่าง" ยังไม่ผูกกับเวอร์ชันใด ๆ</p>
+
+<hr>
+
+<h2>กลุ่ม C — การส่งและการตัดสิน</h2>
+
+<h3>5. Submit ครั้งแรก (institutional)</h3>
+<p>พอนักวิจัยกดส่ง มีเรื่องเกิดขึ้นหลายอย่างพร้อมกัน:</p>
+<ol>
+  <li>ระบบตรวจ validation ซ้ำอีกรอบ (กฎชุดเดิมในขั้น 4)</li>
+  <li><strong>ปักหมุด plan_mode</strong> — โหมดของโครงการ ณ วินาทีที่ส่ง ถูกแช่ไว้กับแผนนี้ตลอดไป ต่อให้เปลี่ยนโหมดที่โครงการทีหลัง แผนที่ส่งแล้วก็ไม่ขยับ</li>
+  <li><strong>สร้างเวอร์ชัน 1</strong> — สำเนาเต็มของแผน ณ ตอนส่ง ถูกแช่ไว้ สถานะ = รอตรวจ (pending)</li>
+  <li>แจ้งเตือนทุกฝ่าย — นักวิจัยเห็นว่าส่งแล้ว กรรมการทุกคนเห็นว่ามีของรอตรวจ</li>
+</ol>
+<p>ตอนนี้แผน <strong>ยังไม่มีผล</strong> ในทางระบบ — ต้องรออนุมัติก่อน</p>
+
+<h3>6. กรรมการตัดสิน: approve / ส่งกลับ</h3>
+<p>กรรมการเปิดดูเวอร์ชันที่รอตรวจ (เห็นทั้งสำเนาเต็มและจุดที่เปลี่ยน) แล้วเลือกทางใดทางหนึ่ง:</p>
+<table>
+  <tr><th>ตัดสิน</th><th>เกิดอะไรขึ้น</th></tr>
+  <tr>
+    <td>อนุมัติ (approve)</td>
+    <td>ชื่อคนตัดสิน + เวลา ถูกจดลงบนเวอร์ชันนั้น แผนมีผลทันที และถ้าเป็นการอนุมัติครั้งแรก ระบบจะแตกแผนเป็นชุด task แรกให้อัตโนมัติ</td>
+  </tr>
+  <tr>
+    <td>ส่งกลับ (return)</td>
+    <td>กรรมการเขียนเหตุผลไว้ ร่างที่นักวิจัยกำลังแก้อยู่คงเดิมทั้งหมด — แก้ต่อแล้วส่งใหม่ได้ทันที และเลขเวอร์ชันที่ถูกตีกลับจะไม่ถูกใช้ซ้ำอีก</td>
+  </tr>
+</table>
+
+<div class="tip red">
+  <p class="tip-label">จุดที่ต่างจาก flowchart เดิม — ตาม requirement</p>
+  <p>flowchart เก่าเขียนว่า "กรรมการอนุมัติครบทุกคน" แต่ requirement กำหนดว่า <strong>หนึ่งเวอร์ชัน มีการตัดสินได้ครั้งเดียว โดยคนเดียว</strong> — กรรมการคนใดคนหนึ่งตัดสินได้เลย คนอื่นแค่ได้รับแจ้ง</p>
+</div>
+
+<h3>7. Self-finalize (independent)</h3>
+<p>สำหรับแผนโหมด independent (ประชาชนทั่วไป) ไม่มีกรรมการ — นักวิจัยกด "สรุปแผนเอง" ระบบตรวจ validation, สร้างเวอร์ชันที่สถานะ = อนุมัติทันทีโดยผู้ใช้เป็นคนตัดสินเอง, แตก task แรกให้ และแผนมีผลทันที ตอน export ออกไป ช่องการอนุมัติจะเขียนว่า "not applicable" — เพราะแผนประเภทนี้ไม่ต้องมีผู้อนุมัติตั้งแต่แรก</p>
+
+<hr>
+
+<h2>กลุ่ม D — หลังแผนมีผลแล้ว</h2>
+<p>พอแผนอนุมัติแล้ว คำถามต่อมาคือ "แก้ไขได้ไหม?" ได้ แต่ระบบแยกการแก้เป็นสองน้ำหนัก:</p>
+
+<h3>8. Minor edit — แก้เล็ก ไม่ต้องขออนุมัติ</h3>
+<p>การแก้ที่ไม่กระทบแก่นของแผน เช่น เพิ่ม/แก้ชื่อผู้ร่วมวิจัย (contributor), แก้ตัวเลขงบประมาณ (cost) — ระบบ diff ร่างกับสำเนาเวอร์ชันที่มีผลอยู่ เห็นว่าแตะแต่ฟิลด์ minor ก็ <strong>รวมเข้าเวอร์ชันเดิมเลย</strong> ไม่สร้างเวอร์ชันใหม่ ไม่รอใครอนุมัติ แค่จดบันทึกไว้ว่าใครแก้อะไรตอนไหน</p>
+
+<h3>9. Submit revision (major) — แก้ใหญ่ ต้องขออนุมัติใหม่</h3>
+<p>ฟิลด์พวกวันเริ่ม-วันจบงาน, เรื่องจริยธรรม, เรื่องข้อมูลส่วนบุคคล, การเพิ่มหรือลบผลลัพธ์วิจัย (output) — แตะฟิลด์เดียวก็นับว่าทั้งชุดเป็น major ต้องสร้างเวอร์ชันใหม่และขอตรวจใหม่</p>
+<p>กติกาที่น่าสนใจจาก diagram นี้:</p>
+<ul>
+  <li><strong>รอได้ทีละเวอร์ชัน</strong> — ถ้ามีเวอร์ชันค้างรอตัดสินอยู่ ส่งรอบใหม่ไม่ได้ ต้องรอตัดสินก่อน</li>
+  <li><strong>ระหว่างรอ ยังแก้ minor ได้</strong> — fix เล็ก ๆ ยังรวมเข้าเวอร์ชันที่มีผลอยู่ได้ตามปกติ</li>
+  <li><strong>ตอนอนุมัติ ระบบ "เก็บงาน" ให้</strong> — fix เล็ก ๆ ที่นักวิจัยทำทับระหว่างรอ จะถูกพกติดไปกับเวอร์ชันใหม่ (carried) แต่ fix ที่ไปชนกับสิ่งที่ revision ลบทิ้ง จะถูกจดว่า "ตัดทิ้ง" (dropped) อย่างชัดเจน ไม่หายเงียบ ๆ</li>
+</ul>
+
+<h3>10. Restore เวอร์ชัน — มีไว้ทำไม?</h3>
+<p>นี่คือฟีเจอร์ "ย้อนเวลา" ของแผน เหมือน version history ใน Google Docs — เผื่อนักวิจัยแก้ไปหลายรอบแล้วรู้สึกว่า "ฉบับก่อนหน้านี่ดีกว่า" ก็เลือกเวอร์ชันเก่ามาเป็นจุดตั้งต้นของร่างที่กำลังทำงานอยู่ได้</p>
+<p>แต่ระบบตั้งกติกาสำคัญไว้ว่า <strong>restore ไม่ใช่การย้อนเวลา แต่เป็น "การแก้ไขครั้งหนึ่ง" ที่เอาเนื้อหาเก่ามาใส่ใหม่</strong> — ฟังดูวน ๆ แต่มันสมเหตุสมผล: ถ้าเนื้อหาฉบับเก่าที่ดึงกลับมา ต่างจากฉบับที่มีผลอยู่ในจุด major (เช่น ลบ output ออกไปตอนหลัง) การ restore ก็คือการแก้ major ครั้งหนึ่ง ซึ่งต้องผ่านกรรมการเหมือนการแก้ทุกครั้ง ทำแบบนี้เพื่อกันใช้ restore ลัดประตูอนุมัติ — ย้อนกลับไปสู่เวอร์ชันที่มีของที่เคยถูกสั่งให้แก้ โดยไม่ขออนุมัติใหม่ ไม่ได้</p>
+
+<figure>
+<svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="var(--muted)" stroke="none"/>
+    </marker>
+    <marker id="arg" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="var(--green)" stroke="none"/>
+    </marker>
+  </defs>
+
+  <!-- timeline -->
+  <line x1="30" y1="70" x2="650" y2="70" stroke="var(--border)"/>
+
+  <rect x="40" y="40" width="110" height="60" rx="8" fill="var(--green-soft)" stroke="var(--green)"/>
+  <text x="95" y="65" text-anchor="middle" font-size="13.5" fill="var(--ink)">เวอร์ชัน 3</text>
+  <text x="95" y="84" text-anchor="middle" font-size="12" fill="var(--muted)">อนุมัติ — มีผล</text>
+
+  <rect x="200" y="40" width="110" height="60" rx="8" fill="var(--red-soft)" stroke="var(--red)"/>
+  <text x="255" y="65" text-anchor="middle" font-size="13.5" fill="var(--ink)">เวอร์ชัน 4</text>
+  <text x="255" y="84" text-anchor="middle" font-size="12" fill="var(--muted)">ถูกตีกลับ</text>
+
+  <rect x="360" y="40" width="110" height="60" rx="8" fill="var(--amber-soft)" stroke="var(--amber)"/>
+  <text x="415" y="65" text-anchor="middle" font-size="13.5" fill="var(--ink)">เวอร์ชัน 5</text>
+  <text x="415" y="84" text-anchor="middle" font-size="12" fill="var(--muted)">รอตัดสิน</text>
+
+  <rect x="520" y="40" width="110" height="60" rx="8" fill="var(--card)" stroke="var(--border)"/>
+  <text x="575" y="65" text-anchor="middle" font-size="13.5" fill="var(--ink)">ร่างทำงาน</text>
+  <text x="575" y="84" text-anchor="middle" font-size="12" fill="var(--muted)">กำลังแก้อยู่</text>
+
+  <!-- restore arrow -->
+  <path d="M95,104 L95,170 L560,170 L560,104" fill="none" stroke="var(--green)" marker-end="url(#arg)"/>
+  <text x="330" y="160" text-anchor="middle" font-size="13.5" fill="var(--green)">restore เวอร์ชัน 3 — โหลดสำเนาเก่ากลับเข้าร่างทำงาน</text>
+
+  <!-- verdicts -->
+  <text x="60" y="205" font-size="13" fill="var(--red)">✕ เวอร์ชันรอตัดสิน (5) → ห้าม restore</text>
+  <text x="60" y="228" font-size="13" fill="var(--amber)">△ ต่างจากฉบับมีผลจุด major → restore แล้วต้องขออนุมัติใหม่</text>
+  <text x="60" y="251" font-size="13" fill="var(--green)">✓ ต่างแค่จุด minor → รวมเข้าฉบับมีผลได้เลย</text>
+</svg>
+<figcaption>restore ย้อนไปเวอร์ชันเก่า แต่ผลลัพธ์ถูกจัดการเหมือน "การแก้ไขครั้งหนึ่ง" ไม่ใช่การย้อนเวลา</figcaption>
+</figure>
+
+<p>สรุป 3 ทางที่ diagram วางไว้:</p>
+<table>
+  <tr><th>เวอร์ชันที่เลือก restore</th><th>ระบบทำอะไร</th></tr>
+  <tr><td>เวอร์ชันที่ยังรอกรรมการตัดสิน</td><td>ปฏิเสธทันที — ของที่รอตัดสินห้ามแตะ</td></tr>
+  <tr><td>เวอร์ชันที่มีผลอยู่ตอนนี้</td><td>แค่เอาสำเนาของมันกลับเข้าร่างทำงาน (ทิ้งการแก้ที่ยังไม่ได้ส่ง) — อะไรที่มีผลอยู่ไม่เปลี่ยน ไม่จดอะไร</td></tr>
+  <tr><td>เวอร์ชันเก่าอื่น ๆ (อนุมัติก่อนหน้า / ถูกตีกลับ)</td><td>โหลดเข้าร่างทำงาน จดว่า restore มาจากเวอร์ชันไหน แล้วเทียบกับฉบับที่มีผล — ต่างแค่ minor ก็รวมได้เลย, ต่างจุด major ต้อง submit ขออนุมัติใหม่</td></tr>
+</table>
+
+<div class="tip green">
+  <p class="tip-label">ข้อดีของการออกแบบแบบนี้</p>
+  <p>restore ช่วยให้ "การทดลองแก้ไปคนละทาง" ไม่มีวันทำระบบพัง — ลองแก้ไปเยอะ ๆ แล้วไม่ชอบ ก็ดึงฉบับที่ชอบกลับมาเริ่มใหม่ได้เสมอ แต่ความน่าเชื่อถือของฉบับที่มีผล (ที่กรรมการเคยอนุมัติ) ไม่ถูกลัดคอ เพราะทางกลับที่กระทบแก่นแผนยังต้องผ่านอนุมัติเหมือนเดิม</p>
+</div>
+
+<h3>11. ลบ / นำกลับ research output</h3>
+<p>การลบผลลัพธ์วิจัย (เช่น ชุดข้อมูล) ออกจากแผนที่มีผลแล้ว ไม่ใช่การลบทันที — มันเป็น major edit จึงเป็นเพียง "ข้อเสนอ" ในร่างก่อน ต้องรอเวอร์ชันใหม่อนุมัติถึงจะมีผล ระหว่างรอนั้น output ยังนับว่าอยู่ งาน (task) ที่ผูกกับมันยังทำต่อได้</p>
+<p>พอเวอร์ชันที่ลบ output อนุมัติแล้ว:</p>
+<ul>
+  <li>task ที่ผูกกับ output นั้นถูก <strong>cancel ไม่ใช่ลบ</strong> — จดว่ายกเลิกจากสถานะอะไร เพราะอะไร (output_removed) และจดชื่อ output ไว้ให้ตามเจอทีหลัง</li>
+  <li>ถ้าวันหนึ่งนักวิจัยเอา output ตัวเดิมกลับมาในเวอร์ชันใหม่ (ผ่านการอนุมัติ) ระบบจะ<strong>เสนอให้เปิด task คืนทีละตัว</strong> — ไม่เปิดเองอัตโนมัติ เพราะการ cancel ครั้งนั้นผ่านการอนุมัติมาแล้ว การเปิดคืนจึงควรเป็นทางเลือกของคน ส่วน task ที่ยกเลิกด้วยมือเองไม่ถูกเสนอให้เปิดคืน</li>
+</ul>
+
+<h3>12. ทำงาน tasks — แผนที่อนุมัติแล้วกลายเป็นงานจริง</h3>
+<p>task คือหัวใจของ "แผนที่มีชีวิต" — แผนไม่ใช่เอกสารที่เขียนแล้วจำศีลในตู้ แต่แตกออกเป็นงานที่ต้องทำ เช่น "ทำเอกสารอธิบายชุดข้อมูล" "เก็บไฟล์เข้าคลัง" โดย:</p>
+<ul>
+  <li>เปอร์เซ็นต์ความคืบหน้า <strong>คำนวณจาก checklist จริง</strong> ไม่ใช่ตัวเลขที่ใครตั้งเองได้ — ทำไปเท่าไรคือเท่านั้น</li>
+  <li>แนบหลักฐานได้ทั้งไฟล์และลิงก์/DOI</li>
+  <li><strong>งานที่บันทึกความคืบหน้าแล้ว ลบไม่ได้</strong> — ที่มี evidence, ติก checklist ไปแล้ว หรือปิดงานไปแล้ว ยกเลิกไม่ได้ (เพราะจะทับบันทึกจริง) ทำได้แค่เปิดกลับ ส่วน task ที่ยังไม่มีใครเริ่ม ยกเลิกหรือลบก็ได้</li>
+</ul>
+
+<div class="tip">
+  <p class="tip-label">หลักคิดเบื้องหลัง</p>
+  <p>ทุกอย่างที่คือ "การบันทึกการทำงานจริง" ของนักวิจัย ระบบจะไม่ทำลาย — ลบได้แค่ของที่ยังไม่มีความหมายในทางประวัติศาสตร์ของโครงการ</p>
+</div>
+
+<h3>13. Archive แผน / ลบโครงการ</h3>
+<p>ระบบนี้<strong>ไม่มีทางลบแผนเลย</strong> — แผนที่ไม่อยากเห็นแล้วเก็บเข้า archive ได้ (แค่ซ่อนจากหน้าลิสต์ ยังค้นเจอผ่าน filter และ unarchive กลับมาได้ครบทุกอย่าง) และโครงการจะลบได้ก็ต่อเมื่อไม่มีแผนอยู่เลยแม้แต่แผนที่ archive แล้ว — กันการลบพลาดทั้งประวัติงานวิจัย</p>
+
+<h3>14. Export มาตรฐาน — ส่งมอบแผนให้โลกภายนอก</h3>
+<p>แผนที่มีผลอยู่ export ออกมาได้เป็นไฟล์ตามมาตรฐานสากล (maDMP v3.0 หรือ RDA Common Standard v1.3) เพื่อส่งให้หน่วยงานทุนหรือหน่วยงานกำกับใช้ได้จริง</p>
+<p>สำคัญคือ export เป็น "การฉายภาพ" (projection) จาก <strong>เวอร์ชันที่มีผล</strong> เสมอ ไม่ใช่จากร่างที่กำลังแก้ค้างอยู่ — สิ่งที่ยังไม่อนุมัติจะไม่ปรากฏในไฟล์ที่ส่งออก และระบบจะบอกบนหน้าจอด้วยว่ามีการแก้ที่ยังไม่โชว์ใน export นี้ ก่อนอนุมัติครั้งแรก export ได้จากร่าง แต่สถานะจะบอกตรง ๆ ว่า "ยังไม่ส่ง" หรือ "รอตรวจอยู่"</p>
+
+<hr>
+
+<h2>สรุป — ทั้งหมดนี้ให้ประโยชน์อะไร</h2>
+<ul>
+  <li><strong>นักวิจัย</strong> ได้ผู้ช่วย AI ร่างแผน, ได้ checklist งานที่ตามได้ว่าทำถึงไหน, และมั่นใจว่าแก้ผิดย้อนกลับได้เสมอ (restore)</li>
+  <li><strong>กรรมการ / สถาบัน</strong> ได้ความมั่นใจว่าทุกการแก้ที่กระทบแก่นแผนต้องผ่านตาคนก่อนมีผล และทุกการตัดสินมีชื่อ เวลา เหตุผล จดไว้ครบ</li>
+  <li><strong>โลกภายนอก</strong> ได้แผนที่ export เป็นมาตรฐานสากลได้ทันที พร้อมสถานะการอนุมัติที่ตรวจสอบได้</li>
+</ul>
+<p>แก่นคิดที่ร้อยทั้ง 14 flows เข้าด้วยกันมีสองข้อ: หนึ่ง — <strong>ทุกอย่างสำคัญต้องผ่าน "เวอร์ชัน + การตัดสิน"</strong> ไม่มีการเปลี่ยนของที่มีผลอยู่แบบเงียบ ๆ สอง — <strong>ไม่มีอะไรถูกลบเลือน มีแต่ถูกจด</strong> ไม่ว่าจะเป็น minor edit, dropped fix, cancelled task หรือ superseded proposal</p>
+
+<p style="margin-top:48px; font-size:15px;">อ้างอิงจาก: <a href="../architecture/sequence-diagrams.md">Sequence Diagrams — ระบบติดตามความคืบหน้าโครงการวิจัย</a></p>
+
+</div>
+</body>
+</html>
