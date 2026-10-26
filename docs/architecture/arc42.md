@@ -62,7 +62,7 @@
 | Priority | Quality Goal | ความหมายและเหตุผล |
 | --- | --- | --- |
 | 1 | **Preservation (ความถูกต้องของประวัติ)** | สิ่งที่ผู้ใช้บันทึกไว้ต้องไม่มีทางหายหรือถูกทำลาย — ไม่มีทางลบแผน, task ที่มีงานบันทึกไว้ลบไม่ได้, การแก้ที่ merge ไม่ได้จะถูกจดไว้ใน `dropped_minor_edits` แทนที่จะหายไปเงียบ ๆ และการ submit สองคนพร้อมกันบนแผนเดียวเป็นไปไม่ได้ (ป้องกันด้วย constraint ระดับฐานข้อมูล) |
-| 2 | **ความถูกต้องของ version/diff engine** | ความเสี่ยงจริงของระบบไม่ใช่ความช้า แต่คือความถูกต้องของกลไก diff / classify / carry / drop / replay ที่ทำงานตาม entity id — เพราะ workload เล็กมาก (~200 ผู้ใช้/วัน, peak ~2,000) จึงเน้น test-first (เขียน test ก่อนเขียนโค้ด) บน pure functions และมี e2e test ครบทั้ง 14 flows |
+| 2 | **ความถูกต้องของ version/diff engine** | ความเสี่ยงจริงของระบบไม่ใช่ความช้า แต่คือความถูกต้องของกลไก diff / classify / carry / drop / replay ที่ทำงานตาม entity id — เพราะ workload เล็กมาก (~200 ผู้ใช้/วัน, peak ~2,000) จึงเน้น test-first (เขียน test ก่อนเขียนโค้ด) บน pure functions และมี e2e test ครบทั้ง 18 flows |
 | 3 | **ความเรียบง่าย (single instance)** | เป็น modular monolith รันบนเครื่องเดียว (อธิบายเพิ่มในหมวด 4.2) scale แนวตั้ง — ทุก flow ที่ต้องพร้อมกัน (approve → สร้าง tasks → notifications) ทำใน transaction เดียว ตรวจสอบได้ง่าย ไม่มีระบบ distributed ใด ๆ บนเส้นทางหลัก |
 | 4 | **Consistency ของ contract BE/FE** | zod schema เป็น source of truth เพียงชุดเดียว — validation ฝั่ง backend, type ฝั่ง backend และ type ฝั่ง frontend มาจากชุดเดียวกันทั้งหมด รวมถึง field policy และ domain profiles ที่ backend ใช้ตัดสิน ต้องเป็นชุดเดียวกับที่ frontend แสดงผล (อธิบาย zod เพิ่มในหมวด 4.1) |
 
@@ -141,7 +141,7 @@
 | Interface | Technology | Description |
 | --- | --- | --- |
 | REST API | HTTPS / JSON | zod → OpenAPI (`@asteasolutions/zod-to-openapi` + `@nestjs/swagger`) — เสิร์ฟ spec ที่ `GET /openapi-json` แบบ runtime |
-| SSE streams | `text/event-stream` | Server-Sent Events คือช่องทางที่ server push ข้อมูลส่งหา browser ต่อเนื่องได้โดยไม่ต้องรอ browser ขอเอง ใช้กับ `GET /notifications/stream` และ `POST /dmps/{id}/ai/{action}` — ฝั่ง frontend ใช้ fetch + ReadableStream แทน EventSource เพราะ EventSource แนบ Authorization header ไม่ได้ (ดู ADR-0008) |
+| SSE streams | `text/event-stream` | Server-Sent Events คือช่องทางที่ server push ข้อมูลส่งหา browser ต่อเนื่องได้โดยไม่ต้องรอ browser ขอเอง ใช้กับ AI actions (`POST /dmps/{scope}/ai/{action}`) เท่านั้น — notification เป็น polling ไม่มี stream (ADR-0013) — ฝั่ง frontend ใช้ fetch + ReadableStream แทน EventSource เพราะ EventSource แนบ Authorization header ไม่ได้ (ดู ADR-0008) |
 | Error envelope | JSON รูปแบบเดียวทั้ง API | `{ error: { code, errors: [{path, code, message}] } }` — `path` เป็น JSON pointer ที่ชี้ตำแหน่งผิดพลาดลงใน draft โดยตรง ทำให้ frontend พาผู้ใช้ "คลิกไปแก้จุดนั้น" ได้เลย |
 | Reverse proxy | Caddy | TLS termination (จัดการใบรับรอง HTTPS) + reverse proxy บน VM เดียว |
 
@@ -159,8 +159,8 @@
 | Validation | zod (runtime) + กฎหมวด 3.3 ของ requirement | ปฏิเสธพร้อม path ที่ชี้ลง draft (JSON pointer) ให้ frontend นำไปทำ "คลิกไปแก้" |
 | ID | **UUID v7** mint โดย backend | ตัดปัญหา collision ข้ามแผนของระบบเดิม (seed ids ซ้ำ) + export เติม prefix ด้วย dmp_id |
 | Auth | JWT access อายุสั้น + refresh token ที่ revoke ได้ (bcrypt/argon2id) | เบี่ยงจาก ERD (SHA-256) อย่างมีเจตนา — ERD ระบุเองว่า SHA-256 ไม่ปลอดภัยพอสำหรับรหัสผ่าน (ดู ADR-0006) |
-| AI integration | เขียน ReAct loop เอง บน `AiClient` port | ต้องควบคุม SSE event (`status`/`tool`/`token`/`result`) ให้ตรง spec เป๊ะ — จึงไม่ใช้ LangChain |
-| Testing | Vitest (unit test-first บน engine) + supertest e2e ครบ 14 flows | preservation คือกฎที่ bug เกิดขึ้นแล้วแพงที่สุด (Quality Goal 1–2) |
+| AI integration | เขียน ReAct loop เอง บน `AiClient` port | ต้องควบคุม SSE event (`status`/`tool`/`delta`/`proposal`/`done|error` — ADR-0018) ให้ตรง spec เป๊ะ — จึงไม่ใช้ LangChain |
+| Testing | Vitest (unit test-first บน engine) + supertest e2e ครบ 18 flows | preservation คือกฎที่ bug เกิดขึ้นแล้วแพงที่สุด (Quality Goal 1–2) |
 | Config | `config.json` + env เฉพาะ secret | เลือกโมเดล AI ต่อ action ได้ใน config.json; secrets ผ่าน env เท่านั้น (TC-7) |
 
 **ทำไมไม่ใช่ Go หรือ Python** — ในแง่ raw performance Go ชนะชัดเจน (goroutine กินแค่ ~KB ต่อ connection ค้าง, compile เป็น native binary) แต่ประสิทธิภาพของภาษาไม่ใช่ตัวตัดสินที่ scale นี้ — ความเสี่ยงจริงของระบบคือความถูกต้องของ diff/version engine (การจำแนก minor/major, carry/drop edits, replay ตาม entity id) ภาษาที่ช่วยให้ logic ชุดนี้ถูกต้องและดูแลรักษาได้ง่าย จึงดีกว่าภาษาที่เร็วกว่า
@@ -194,7 +194,7 @@
 | Quality Goal | Approach |
 | --- | --- |
 | Preservation | constraint ระดับฐานข้อมูล (`UNIQUE (dmp_id, number)`, partial unique pending, PK คู่ `(project_id, user_id)`), `draft_revision` แบบ optimistic concurrency (ชนกัน → `409`), กฎ archive/cancel/reopen, `dropped_minor_edits` จดแทนการหายเงียบ ๆ |
-| ความถูกต้องของ engine | domain engine เป็น pure functions (ฟังก์ชันที่ให้ผลลัพธ์เดิมเสมอสำหรับ input เดิม และไม่แตะโลกภายนอก) — unit test-first; e2e supertest ต่อ Postgres จริง ครบ 14 flows ของ sequence diagrams |
+| ความถูกต้องของ engine | domain engine เป็น pure functions (ฟังก์ชันที่ให้ผลลัพธ์เดิมเสมอสำหรับ input เดิม และไม่แตะโลกภายนอก) — unit test-first; e2e supertest ต่อ Postgres จริง ครบ 18 flows ของ sequence diagrams |
 | เรียบง่าย / auditability | transaction Drizzle เดียวใน service ผู้เรียก, in-process event bus ซ่อนอยู่ใน adapter ของ `NotificationPublisher` เท่านั้น, deploy = restart สั้น ๆ |
 | Contract consistency | zod schemas กลาง (`features/shared/contracts/`), field policy และ domain profiles เป็น registry ที่ expose ผ่าน `GET /field-policy` / `GET /domain-profiles` — frontend ใช้ชุดเดียวกับที่ backend ใช้ตัดสิน |
 
@@ -226,9 +226,9 @@ src/
 │   ├── files/                # upload/download, docx parse (mammoth, in-process)
 │   ├── dmps/                 # draft CRUD, submit, versions, decisions, archive
 │   ├── tasks/                # lifecycle, evidence, preservation rules
-│   ├── notifications/        # notification rows + SSE stream
-│   ├── ai/                   # ReAct loop, thread, token budget
-│   ├── exports/              # madmp-v3 / rda-v1.3 projections
+│   ├── notifications/        # notification rows — polling (ไม่มี push, ADR-0013)
+│   ├── ai/                   # ReAct loop, thread, token budget, idempotency
+│   ├── exports/              # madmp-v3 / rda-v1.3 projections — deferred (ADR-0019)
 │   └── shared/
 │       ├── domain-engine/    # pure functions — ห้าม import @nestjs/*
 │       ├── domain-profiles/  # DOMAIN_PROFILE registry + field-policy (path-based)
@@ -238,7 +238,7 @@ src/
 │       │                     #   OpenRouterClient, SmtpMailer
 │       └── config/           # config loader (จุดเดียวที่อ่าน config.json)
 ├── database/                 # drizzle schema + migrations (SQL files) + seeds
-tests/                        # unit (mirror src/) / integration / e2e (14 flows) / fixtures
+tests/                        # unit (mirror src/) / integration / e2e (18 flows) / fixtures
 config.json                   # ค่า tunable — mirror โครงสร้างโฟลเดอร์
 .env / .env.example           # credentials เท่านั้น
 ```
@@ -252,18 +252,19 @@ config.json                   # ค่า tunable — mirror โครงสร�
 
 | Feature | รับผิดชอบ | Endpoints หลัก |
 | --- | --- | --- |
-| `auth` | sign-up (เฉพาะ researcher), sign-in, JWT access + refresh ที่ revoke ได้ | `POST /sign-up`, `/sign-in`, `/refresh`, `/sign-out` |
-| `users` | profile, เปลี่ยนรหัสผ่าน, admin provisioning, password reset, `ai_token_limit/used` | `GET/PATCH /me`, `POST /me/password`, `POST /admin/users`, `POST /admin/users/{id}/disable`, `POST /password-reset` |
-| `projects` | โครงการ + members, proposal selection, การลบโครงการ (ปฏิเสธถ้ามีแผนอยู่) | `POST/GET /projects`, `GET/PATCH/DELETE /projects/{id}` |
-| `files` | upload/download ผ่าน `FileStorage` port, จำกัด 25 MB, parse .docx เก็บ extracted text | `POST /projects/{id}/files`, `GET /files/{id}` |
-| `dmps` | draft CRUD (`draft_revision` — ชนกันได้ `409`), diff/classify ตอนบันทึก, submit/finalize, versions + decisions, restore, archive | `PUT /dmps/{id}/draft`, `POST /dmps/{id}/submit\|finalize\|archive\|unarchive`, `POST /dmps/{id}/versions/{n}/approve\|return\|restore`, `DELETE /dmps/{id}/draft/datasets/{ds}` |
-| `tasks` | lifecycle + preservation rules, progress คำนวณจาก checklist เสมอ, evidence หลายรูปแบบ | `GET /tasks`, `PATCH /tasks/{id}`, `POST /tasks/{id}/files\|complete\|cancel\|reopen`, `DELETE /tasks/{id}` |
-| `notifications` | rows สร้างใน transaction ของเหตุการณ์ + push ผ่าน port, 8 type | `GET /notifications`, `GET /notifications/stream` (SSE), `POST /notifications/{id}/read`, `POST /notifications/read-all` |
-| `ai` | ReAct loop บน `AiClient` port, tools 3 ตัว, token budget แบบ estimate→reconcile, thread persist | `POST /dmps/{id}/ai/{action}` (SSE), `GET /dmps/{id}/ai/thread` |
-| `exports` | projection ไม่เก็บ — madmp-v3 / rda-v1.3 | `GET /dmps/{id}/export?format=madmp-v3\|rda-v1.3` |
+| `auth` | sign-up (เฉพาะ researcher), sign-in, refresh (httpOnly cookie + rotation — ADR-0016), sign-out | `POST /users`, `POST /auth/sessions`, `POST /auth/refresh`, `DELETE /auth/sessions/current`, `GET /users/username-available` |
+| `users` | profile, `ai_token_limit/used` + `quota_resets_at`, admin provisioning, password reset (นอก contract ฉบับ FE) | `GET/PATCH /users/me`, `POST /me/password`, `POST /admin/users`, `POST /admin/users/{id}/disable`, `POST /password-reset` |
+| `projects` | โครงการ + members, การลบโครงการ (ปฏิเสธถ้ามีแผนอยู่); ผูก proposal โดย analyze-proposal เป็น side effect (ไม่มี PATCH — ADR-0024) | `POST/GET /projects`, `GET /projects/{id}`, `GET /projects/{id}/members`, `DELETE /projects/{id}` |
+| `files` | upload/download ผ่าน `FileStorage` port, จำกัด 25 MB, MIME .docx → `400`, parse ไม่ได้ → `422`, lifecycle archive/delete | `POST /projects/{id}/files`, `GET /files`, `GET /files/{id}/content`, `POST /files/{id}/archive`, `DELETE /files/{id}` |
+| `dmps` | draft CRUD ส่งทั้งก้อน (`draft_revision` — ชนกันได้ `409` ฝัง draft ปัจจุบัน), save ตรวจเฉพาะ type/format, client เลือก minor-edits/revisions, submit/finalize, versions + decisions, restore, discard, archive | `POST/GET /dmps`, `GET /dmps/{id}`, `PUT /dmps/{id}/draft`, `POST /dmps/{id}/draft/discard\|restore`, `POST /dmps/{id}/submit\|finalize\|archive\|unarchive\|minor-edits\|revisions`, `POST /dmps/{id}/versions/{n}/approve\|reject`, `GET /dmps/{id}/reopen-offers`, `POST /reopen-offers/{id}/accept\|dismiss`, `POST /dmps/{id}/tasks/generated` |
+| `reviews` | read model ของคิวกรรมการ (ADR-0007 ยังเป็น global queue — ADR-0024) | `GET /reviews` |
+| `tasks` | lifecycle + preservation rules (`use_complete`, `output_locked`, evidence requirement 3 ระดับ), progress คำนวณจาก checklist เสมอ (PATCH ส่ง array เต็ม), evidence polymorphic | `POST/GET /tasks`, `PATCH /tasks/{id}`, `POST /tasks/{id}/complete\|cancel\|reopen`, `PUT/DELETE /tasks/{id}/evidence`, `DELETE /tasks/{id}` |
+| `notifications` | rows สร้างใน transaction ของเหตุการณ์ + poll (ไม่มี push — ADR-0013), 8 type | `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read_all`, `DELETE /notifications/{id}`, `DELETE /notifications` |
+| `ai` | ReAct loop บน `AiClient` port (anti-corruption layer แปลจาก OpenAI-compatible format — ADR-0018), tools read-only, quota คิดทุก call + cached input 10% + reset รายเดือน, `Idempotency-Key` + replay 24 ชม., thread persist (scope dmp \| unscoped) | `POST /ai/analyze-proposal`, `POST /dmps/{scope}/ai/{action}` (SSE; scope = dmp_id \| `unscoped`), `GET /dmps/{scope}/ai-thread`, `PUT /dmps/{scope}/ai-thread/{entry}`, `POST /dmps/{scope}/ai-thread/clear\|adopt`, `GET /ai/quota` |
+| `exports` | projection ไม่เก็บ — **deferred** ออกจาก scope v1 (ADR-0019) คง design ไว้เป็นสำรอง | — (v1: export อยู่ใน browser) |
 | meta | registry ที่ expose เป็น API | `GET /domain-profiles`, `GET /field-policy`, `GET /openapi-json` |
 
-หมายเหตุ: list endpoints ใช้ `?page=&limit=` (offset) พอ — โหลดสูงสุด ~2,000 peak ไม่จำเป็นต้องใช้ cursor pagination; committee queue เป็น **global queue** (`GET /dmps?status=pending`) — เปิดดู snapshot + changes ของเวอร์ชันที่รอได้ และใครตัดสินก่อนก็ได้ (หนึ่งเวอร์ชัน หนึ่ง decision ตาม requirement หมวด 4.6) — ไม่มี entity การมอบหมายงาน
+หมายเหตุ: **source of truth ของ paths คือ frontend contract** (`docs/frontend-api/`) — ตารางนี้สรุปเท่านั้น paths ยึดตาม FE โดยตัด prefix `/v1` ทิ้ง (API ใช้งานเดียว ไม่มี third-party consumer — ADR-0017); list endpoints ใช้ cursor pagination สไตล์ Stripe v1 (`object:"list"`, `data`, `has_more`, `total_count`, `starting_after` — ADR-0015); error ใช้ catalog code ของ FE เป็น canonical (ADR-0014); committee queue เป็น **global queue** — ใครตัดสินก่อนก็ได้ (หนึ่งเวอร์ชัน หนึ่ง decision ตาม requirement หมวด 4.6) — ไม่มี entity การมอบหมายงาน, `GET /reviews` เป็น read model ที่ครอบรูปร่างหน้าจอ (`days_waiting`, `changes_summary`, filter `decided_by=me`, sort)
 
 ### 5.3 Level 3: Layering ภายใน feature + domain-engine
 
@@ -311,27 +312,29 @@ controller (HTTP/SSE, บาง)
 
 - **draft เป็น JSONB ก้อนเดียวต่อ DMP** — working copy ถูก diff กับ snapshot, validate ทั้งก้อน และ fold/carry ตาม entity id อยู่แล้ว การฉีกเป็นตารางย่อย ๆ จะซ้ำซ้อนกับโครงสร้างที่ระบบใช้งานจริง
 - **DMP_VERSION เป็นตารางจริง (แถวต่อเวอร์ชัน)** — เพื่อให้บังคับ constraint ระดับฐานข้อมูลได้ ตามที่ requirement หมวด 3.2 เรียกร้อง
-- **entity ที่มี lifecycle ข้าม draft เป็นตาราง relational**: USER, CREDENTIAL, PROJECT, PROJECT_MEMBER, TASK, FILE_RECORD, NOTIFICATION, AI_THREAD_ENTRY
+- **entity ที่มี lifecycle ข้าม draft เป็นตาราง relational**: USER, CREDENTIAL, PROJECT, PROJECT_MEMBER, TASK, FILE_RECORD, NOTIFICATION, AI_THREAD_ENTRY, REOPEN_OFFER, IDEMPOTENCY_KEY
 
-**ตาราง relational (11 ตาราง):**
+**ตาราง relational (13 ตาราง):**
 
 | ตาราง | constraint สำคัญ |
 | --- | --- |
-| `users` | `email` unique แบบ normalize (lowercase + trim), `username` lowercase |
+| `users` | `email` unique แบบ normalize (lowercase + trim), `username` lowercase, `ai_token_limit/used` + `quota_resets_at` (reset รายเดือน — ADR-0023) |
 | `credentials` | PK `username`, FK → users, salted hash **bcrypt/argon2id** (เบี่ยงจาก ERD ตาม requirement หมวด 2.3) |
-| `refresh_tokens` | FK → users, revoke ได้ — รองรับการปิดสิทธิ์บัญชีที่สถาบันมอบ |
-| `projects` | FK `proposal_file_id` → file_records (nullable) |
+| `refresh_tokens` | FK → users, revoke ได้ + **rotation + token-family reuse detection** (ADR-0016) — รองรับการปิดสิทธิ์บัญชีที่สถาบันมอบ |
+| `projects` | FK `proposal_file_id` → file_records (nullable — ตั้งโดย analyze-proposal, ADR-0024) |
 | `project_members` | PK คู่ `(project_id, user_id)` — enforce หมวด 3.2 ที่ระดับฐานข้อมูล |
 | `dmps` | `draft` JSONB, `status`, `plan_mode` (freeze ตอน submit แรก), `active_version`, `archived_at`, `tasks_generated`, `draft_revision` |
 | `dmp_versions` | `UNIQUE (dmp_id, number)` + **partial unique `UNIQUE (dmp_id) WHERE status='pending'`** — บังคับ requirement หมวด 4.3/4.4 โดย Postgres เอง; snapshot/changes/minor_edits/carried/dropped เก็บเป็น JSONB |
-| `tasks` | FK dmps; `progress_percent` คำนวณจาก checklist เสมอ |
-| `file_records` | purpose/docx-extracted-text (เก็บ text ไว้ในตาราง ไม่ใช่ใน metadata — เพื่อให้ agent อ่านของสำเร็จรูป) |
-| `notifications` | type ตาม requirement หมวด 7, read_at nullable |
-| `ai_thread_entries` | kind user/event/assistant, scope ตาม dmp_id, token_count |
+| `tasks` | FK dmps; `progress_percent` คำนวณจาก checklist เสมอ; **ไม่มี `file_id`** — evidence เก็บ ref (ADR-0022) |
+| `file_records` | purpose/docx-extracted-text (เก็บ text ไว้ในตาราง ไม่ใช่ใน metadata — เพื่อให้ agent อ่านของสำเร็จรูป), `archived_at` (ไฟล์ evidence archive เท่านั้น — ADR-0022/0024) |
+| `notifications` | type ตาม requirement หมวด 7, read_at nullable — ลบได้ (UX ไม่ใช่ record, ADR-0024) |
+| `ai_thread_entries` | kind user/event/assistant, **scope = dmp_id nullable \| `unscoped`** (ADR-0023), token_count, decision accepted/rejected/stale |
+| `reopen_offers` | ข้อเสนอเปิดคืน task หลัง output กลับมา — จดว่าเสนออะไรแล้ว + user accept/dismiss (ADR-0022) |
+| `idempotency_keys` | key, action, replay response, expire 24 ชม. — AI actions retry ไม่โดนโควตาซ้ำ (ADR-0023) |
 
 **DATASET / DISTRIBUTION / CONTRIBUTOR / COST ไม่มีตารางเป็นของตัวเอง** — เป็นค่า nested ใน `dmps.draft` (JSONB) DOMAIN_PROFILE เป็น **code registry** (module ใน backend ไม่มีตาราง) เปิดให้อ่านผ่าน `GET /domain-profiles`
 
-**Optimistic concurrency บน draft:** ทุก PUT draft ต้องแนบ `draft_revision` ที่ client เห็นครั้งล่าสุด — ถ้าค่าที่ส่งมาไม่ตรงกับปัจจุบัน แปลว่ามีคนอื่นแก้ไปก่อน ระบบจะตอบ `409` ให้โหลดใหม่ วิธีนี้ป้องกันการสูญเสียงานแก้ ซึ่งเป็นสิ่งที่ requirement หมวด 5.3 (preservation) ห้ามให้เกิด
+**Optimistic concurrency บน draft:** ทุก PUT draft (ส่ง draft เป็นก้อนเดียว — ADR-0020) ต้องแนบ `draft_revision` ที่ client เห็นครั้งล่าสุด — ถ้าค่าที่ส่งมาไม่ตรงกับปัจจุบัน แปลว่ามีคนอื่นแก้ไปก่อน ระบบจะตอบ `409 draft_conflict` **พร้อมฝัง draft ปัจจุบันกลับมาใน error** เพื่อให้ client rebase ได้ทันที วิธีนี้ป้องกันการสูญเสียงานแก้ ซึ่งเป็นสิ่งที่ requirement หมวด 5.3 (preservation) ห้ามให้เกิด การ save ตรวจเฉพาะ type/format (422 เฉพาะที่เก็บต่อไม่ได้) — กฎ completeness หมวด 3.3 ตรวจตอน submit/finalize (ADR-0020)
 
 **Consequences ของโมเดลนี้** — constraint "หนึ่ง pending ต่อแผน" และ "เลขเวอร์ชันไม่ซ้ำ" ถูกบังคับโดย Postgres เอง ไม่ใช่แค่ logic ใน application — การ submit สอง request พร้อมกันจึงเป็นไปไม่ได้ตามธรรมชาติของฐานข้อมูล
 
@@ -342,11 +345,11 @@ controller (HTTP/SSE, บาง)
 
 ## 6. Runtime View
 
-สถานการณ์ทั้ง 14 flows มี sequence diagram ครบใน [`sequence-diagrams.md`](sequence-diagrams.md) — หัวข้อสำคัญสามอัน (6.1–6.3) วาดซ้ำไว้ที่นี่เพื่อให้อ่านเข้าใจภาพได้ทันทีโดยไม่ต้องสลับเอกสาร (ตัวย่อ R/FE/BE/DB/C/AI ตามที่นิยามใน sequence-diagrams.md) หัวข้ออื่นสรุปเฉพาะสาระสำคัญใน 6.4
+สถานการณ์ทั้ง 18 flows มี sequence diagram ครบใน [`sequence-diagrams.md`](sequence-diagrams.md) — หัวข้อสำคัญสามอัน (6.1–6.3) วาดซ้ำไว้ที่นี่เพื่อให้อ่านเข้าใจภาพได้ทันทีโดยไม่ต้องสลับเอกสาร (ตัวย่อ R/FE/BE/DB/C/AI ตามที่นิยามใน sequence-diagrams.md) หัวข้ออื่นสรุปเฉพาะสาระสำคัญใน 6.4
 
 ### 6.1 Scenario: Submit → Approve (แผน institutional มีผลครั้งแรก — flow 5–7)
 
-นักวิจัย submit → ระบบรัน validateDraft, freeze `plan_mode` ลง DMP (pin ค่านี้ตลอดไป), รัน diff + classify จาก field policy → สร้าง DMP_VERSION #1 (pending, snapshot ณ ตอน submit) พร้อม notification (`dmp_submitted`, `review_requested`) กรรมการ approve (ใครก็ได้คนเดียวพอ — หนึ่งเวอร์ชัน หนึ่ง decision) → บันทึก status/decided_at/decided_by/approver snapshot บนเวอร์ชัน, set `active_version`, task generator สร้างชุด tasks แรก + notification — **ทุกอย่างอยู่ใน transaction Drizzle เดียว** constraint `UNIQUE (dmp_id, number)` และ partial unique pending ทำให้การ submit พร้อมกันสอง request เป็นไปไม่ได้โดย Postgres เองเป็นผู้ปฏิเสธ แผน independent ใช้ `POST /finalize` — self-finalize เวอร์ชัน #1 approved ด้วยตัวเอง แผนมีผลทันที
+นักวิจัย submit → ระบบรัน validateDraft, freeze `plan_mode` ลง DMP (pin ค่านี้ตลอดไป), รัน diff + classify จาก field policy → สร้าง DMP_VERSION #1 (pending, snapshot ณ ตอน submit) พร้อม notification (`dmp_submitted`, `review_requested`) กรรมการ approve (ใครก็ได้คนเดียวพอ — หนึ่งเวอร์ชัน หนึ่ง decision) → บันทึก status/decided_at/decided_by/approver snapshot บนเวอร์ชัน, set `active_version`, task generator สร้างชุด tasks แรก + notification — **ทุกอย่างอยู่ใน transaction Drizzle เดียว** constraint `UNIQUE (dmp_id, number)` และ partial unique pending ทำให้การ submit พร้อมกันสอง request เป็นไปไม่ได้โดย Postgres เองเป็นผู้ปฏิเสธ แผน independent ใช้ `POST /finalize` — self-finalize เวอร์ชัน #1 approved ด้วยตัวเอง แผนมีผลทันที และใช้ finalize กับ **ทุก major edit หลังมีผล** ด้วย (ไม่มีกรรมการจึงไม่มีคิว revision — ADR-0021) กรณีถูกส่งกลับ (`/reject`): ถ้าเป็น submit แรก (ยังไม่มี version in force) → `DMP.status = draft`; ถ้าเป็น revision ของแผนที่มีผลอยู่แล้ว → **status ยังคง approved** version in force ทำงานต่อ (ADR-0021)
 
 ```mermaid
 sequenceDiagram
@@ -383,9 +386,9 @@ sequenceDiagram
         R-->>R: แผนมีผล → เริ่มทำ tasks (flow #12)
     else ส่งกลับให้แก้
         C->>FE: กด Return + note
-        FE->>BE: POST /dmps/{id}/versions/{n}/return
+        FE->>BE: POST /dmps/{id}/versions/{n}/reject
         BE->>DB: เวอร์ชัน n: status=rejected, decided_at, decided_by, note
-        BE->>DB: DMP.status = draft (working draft ไม่ถูกแตะ)
+        BE->>DB: DMP.status = draft (submit แรก — ยังไม่มี version in force)<br/>กรณี revision ของแผนที่มีผลอยู่ → status ยังคง approved
         BE->>DB: notification dmp_returned → นักวิจัย
     end
     end
@@ -410,7 +413,7 @@ sequenceDiagram
 - submit revision ที่แตะฟิลด์ major → สร้าง DMP_VERSION ใหม่โดย `based_on` = version in force ณ ตอน submit (หนึ่ง revision รอได้ครั้งเดียว — partial unique บังคับ)
 - **การแก้เล็ก (minor fix) ระหว่างรอ**: fold ตรงลง version in force (จด `minor_edits`, pending snapshot freeze ไม่แตะ)
 - ตอน approve: `carryEdits` replay ความต่างตาม entity id → fix ทุกตัวจดลง `carried_minor_edits` หรือ `dropped_minor_edits` (fix ที่ตกไปอยู่กับ output ที่ถูกลบ — ไม่มีการหายไปเงียบ ๆ) แล้ว `rebaseWorkingCopy` เหลือเฉพาะการแก้ที่ยังไม่มีใครบันทึก/ส่ง
-- ถ้าถูกส่งกลับ (return) fix เหล่านั้นยังคงอยู่กับ version in force ตามเดิม
+- ถ้าถูกส่งกลับ (reject) fix เหล่านั้นยังคงอยู่กับ version in force ตามเดิม และ **DMP.status ยังคง approved** — version in force ทำงานต่อ (ADR-0021)
 - การลบ research output เป็นเพียง **ข้อเสนอ** — tasks ที่ scope กับ output นั้นยังทำต่อได้จนกว่าเวอร์ชันที่ลบมันจะมีผล จึงถูก cancel (`cancel_reason=output_removed`, จดชื่อ output ไว้ให้ตามได้) เมื่อ output กลับมา tasks ถูก**เสนอให้เปิดคืนทีละตัว** ไม่เปิดเองอัตโนมัติ
 
 ```mermaid
@@ -425,7 +428,8 @@ sequenceDiagram
     rect rgb(235, 244, 255)
     Note over R,C: Submit revision (major) — flow #9
     R->>FE: แก้ draft โดยแตะฟิลด์ major
-    FE->>BE: POST /dmps/{id}/submit
+    FE->>BE: PUT /dmps/{id}/draft (save เป็นกลาง)
+    FE->>BE: POST /dmps/{id}/revisions (+ draft_revision)
     BE->>BE: diffDraft + classify → มี major<br/>→ ต้องสร้างเวอร์ชันใหม่
     alt มี pending ค้างอยู่
         BE-->>FE: ปฏิเสธ — ต้องรอตัดสินเวอร์ชันเดิมก่อน<br/>(partial unique บังคับที่ Postgres)
@@ -438,8 +442,9 @@ sequenceDiagram
     rect rgb(240, 255, 240)
     Note over R,C: Minor fix ระหว่างรอ — fold ลง version in force ตรง ๆ (flow #8)
     R->>FE: แก้ draft ฟิลด์กลุ่ม minor
-    FE->>BE: PUT /dmps/{id}/draft
-    BE->>BE: classify → minor ทั้งชุด
+    FE->>BE: PUT /dmps/{id}/draft (save เป็นกลาง)
+    FE->>BE: POST /dmps/{id}/minor-edits
+    BE->>BE: classify → minor ทั้งชุด (มี major ปน → 409 edits_include_major)
     BE->>DB: foldMinor — แก้ลง snapshot ของ version in force<br/>+ จด minor_edits (pending snapshot freeze ไม่แตะ)
     BE-->>FE: บันทึกสำเร็จ — ไม่สร้างเวอร์ชัน ไม่ต้องรอ review
     end
@@ -455,12 +460,12 @@ sequenceDiagram
     BE->>DB: notification dmp_approved → นักวิจัย
     end
 
-    Note over R,C: ถ้าถูก return — minor fix เหล่านั้นยังอยู่กับ version in force เหมือนเดิม<br/>· ลบ output เป็นเพียงข้อเสนอ — tasks ของมันยังทำต่อได้จนเวอร์ชันที่ลบมีผล<br/>(จากนั้น cancel ด้วย reason=output_removed, จดชื่อ output, เสนอเปิดคืนทีละตัวเมื่อ output กลับมา)
+    Note over R,C: ถ้าถูก reject — DMP.status ยังคง approved, minor fix เหล่านั้นยังอยู่กับ version in force เหมือนเดิม<br/>· ลบ output เป็นเพียงข้อเสนอ — tasks ของมันยังทำต่อได้จนเวอร์ชันที่ลบมีผล<br/>(จากนั้น cancel ด้วย reason=output_removed, จดชื่อ output, เสนอเปิดคืนทีละตัวเมื่อ output กลับมา)
 ```
 
 ### 6.3 Scenario: AI action (ReAct loop, SSE — flow 3)
 
-เช็ก token budget ด้วย estimate ก่อนเริ่ม run (ปฏิเสธถ้าโควตาไม่พอ) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 3 ตัว (`read_proposal` อ่านจาก extracted text, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน) สตรีม SSE เป็น `status`/`tool`/`token`/`result` จบ run ด้วย structured proposals — ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ (run เดียวล้นโควตาได้ ระบบไม่ตัดกลางคัน; ถ้าล้มเหลวกลางทาง งบที่ใช้ไปแล้วยังนับ) extracted text ของ proposal ถูก parse ตอน upload (mammoth, in-process) เก็บใน `file_records` — agent อ่านของสำเร็จรูป ไม่ parse ซ้ำ
+โควตาเป็น pre-flight hint (ไม่ปฏิเสธ run เดียวที่ล้น) + บังคับ `Idempotency-Key` (replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ — ADR-0023) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 3 ตัว (`read_proposal` อ่านจาก extracted text, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน) สตรีม SSE เป็น `status`/`tool` (progress, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal — ADR-0018) ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ — นับ output + uncached input (cached นับ 10%) คิดทุก call รวมที่ fail/abort extracted text ของ proposal ถูก parse ตอน upload (mammoth, in-process) เก็บใน `file_records` — agent อ่านของสำเร็จรูป ไม่ parse ซ้ำ wire format ของ OpenRouter ถูกแปลภายใน `AiClient` adapter — ห้ามรั่วถึง FE
 
 ```mermaid
 sequenceDiagram
@@ -471,43 +476,44 @@ sequenceDiagram
     participant AI as OpenRouter (system key)
     participant DB as DB
 
-    R->>FE: เลือก action ของ AI
-    FE->>BE: POST /dmps/{id}/ai/{action} (SSE)
-    BE->>DB: เช็ก token budget (ai_token_used<br/>+ estimate < ai_token_limit)
-    alt โควตาไม่พอ
-        BE-->>FE: ปฏิเสธก่อนเริ่ม run
-    else โควตาพอ
-        BE->>DB: persist ai_thread_entries (kind=user)
-        BE->>AI: เริ่ม ReAct loop<br/>tools: read_proposal (extracted text),<br/>read_draft, read_domain_profiles
-        loop จน AI ให้คำตอบสุดท้าย
-            AI->>BE: ขอเรียก tool
-            BE->>BE: รัน tool (ไม่มี web search ·<br/>ไม่มี tool เขียน draft แทน)
-            BE->>DB: จด ai_thread_entries (kind=event)
-            BE-->>FE: SSE event: status / tool
-            BE-->>AI: ส่งผล tool กลับให้ AI ใช้ต่อ
-        end
-        AI-->>BE: stream คำตอบ จบด้วย structured proposals
-        BE-->>FE: SSE token → ตามด้วย SSE result (proposals)
-        BE->>DB: จด ai_thread_entries (kind=assistant, token_count)
-        BE->>DB: reconcile token จริง: ai_token_used += ผลรวมของ run<br/>(run เดียวล้นโควตาได้ ไม่ตัดกลางคัน)
-        BE-->>FE: ปิด stream
-        R->>FE: แก้ proposals ได้ทั้งหมด → apply ลง draft (flow #4)
+    R->>FE: เลือก action ของ AI<br/>(analyze-proposal / chat / suggest /<br/>generate-tasks / checklist / regenerate-field)
+    FE->>BE: POST /dmps/{scope}/ai/{action} (SSE)<br/>+ Idempotency-Key · scope = dmp_id | unscoped
+    BE->>BE: เช็ก Idempotency-Key — เคยมี → replay
+    BE->>DB: pre-flight check โควตา (hint — ไม่ปฏิเสธ run เดียวที่ล้น)
+    BE->>DB: persist ai_thread_entries (kind=user)
+    BE->>AI: เริ่ม ReAct loop<br/>tools: read_proposal (extracted text),<br/>read_draft, read_domain_profiles
+    loop จน AI ให้คำตอบสุดท้าย
+        AI->>BE: ขอเรียก tool
+        BE->>BE: รัน tool (ไม่มี web search ·<br/>ไม่มี tool เขียน draft แทน)
+        BE->>DB: จด ai_thread_entries (kind=event)
+        BE-->>FE: SSE event: status / tool
+        BE-->>AI: ส่งผล tool กลับให้ AI ใช้ต่อ
     end
-    Note over AI,DB: ถ้าล้มเหลวกลางทาง — จด event แล้วคืน error<br/>งบ token ที่ใช้ไปแล้วยังนับ<br/>· ทุกผลลัพธ์เป็นข้อเสนอ — ไม่มีอะไรเขียนทับ draft อัตโนมัติ
+    AI-->>BE: stream คำตอบ จบด้วย structured proposals
+    BE-->>FE: SSE delta (ข้อความ) → SSE proposal (proposals) → done
+    BE->>DB: จด ai_thread_entries (kind=assistant, token_count)
+    BE->>DB: reconcile token จริง: output + uncached input<br/>(cached นับ 10% · run เดียวล้นโควตาได้ ไม่ตัดกลางคัน)
+    BE-->>FE: ปิด stream (terminal: done | error)
+    R->>FE: แก้ proposals ได้ทั้งหมด → apply ลง draft (flow #4)
+    Note over AI,DB: ถ้าล้มเหลว/abort กลางทาง — SSE error, งบ token ที่ใช้ไปแล้วยังนับ<br/>retry ด้วย Idempotency-Key เดิมภายใน 24 ชม. ไม่โดนโควตาซ้ำ<br/>· ทุกผลลัพธ์เป็นข้อเสนอ — ไม่มีอะไรเขียนทับ draft อัตโนมัติ
 ```
 
 ### 6.4 สถานการณ์อื่น (สรุป — diagram เต็มใน sequence-diagrams.md)
 
 | # | Scenario | ประเด็นสำคัญ |
 | --- | --- | --- |
-| 1 | Sign-up / Sign-in | เฉพาะ researcher; username/email ห้ามซ้ำ; ระบุผู้กระทำจาก JWT subject ทุก mutation |
-| 2 | สร้างโครงการ + proposal | plan_mode default ตาม account_type; การแทน proposal จด `superseded_at` + notification |
-| 4 | แก้ draft + validation | 422 พร้อม path JSON pointer ให้คลิกไปแก้; `draft_revision` ไม่ตรง → 409 |
-| 8 | Minor edit | fold ตรงลง version in force ไม่สร้างเวอร์ชัน ไม่ต้องรอ review |
+| 1 | Sign-up / Sign-in | เฉพาะ researcher; username/email ห้ามซ้ำ (`409 username_taken`/`email_taken`); refresh ผ่าน httpOnly cookie + rotation; ระบุผู้กระทำจาก JWT subject ทุก mutation |
+| 2 | สร้างโครงการ + proposal | plan_mode default ตาม account_type; ผูก proposal โดย analyze-proposal (ไม่มี PATCH /projects/{id}); การแทน proposal จด `superseded_at` + notification |
+| 4 | แก้ draft + validation | save ส่งทั้งก้อน (PUT) ตรวจเฉพาะ type/format — กฎ 3.3 ตรวจตอน submit; 422 พร้อม path JSON pointer ให้คลิกไปแก้; `draft_revision` ไม่ตรง → 409 ฝัง draft ปัจจุบัน |
+| 8 | Minor edit | client เลือก endpoint เอง (`minor-edits`) — fold ตรงลง version in force ไม่สร้างเวอร์ชัน ไม่ต้องรอ review |
 | 10 | Restore เวอร์ชัน | เวอร์ชันที่รอ decision restore ไม่ได้; restore เวอร์ชันอื่นนับเป็นการแก้ธรรมดา (rollback ข้ามการอนุมัติไม่ได้) |
-| 12 | ทำงาน tasks | progress คำนวณจาก checklist เสมอ; task ที่มีงานบันทึกลบไม่ได้, ที่เสร็จแล้ว cancel ไม่ได้ (reopen เท่านั้น) |
+| 12 | ทำงาน tasks | progress คำนวณจาก checklist เสมอ; task ที่มีงานบันทึกลบไม่ได้, ที่เสร็จแล้ว cancel ไม่ได้ (reopen เท่านั้น); status รวม `cancelled` |
 | 13 | Archive / ลบโครงการ | ไม่มีทางลบแผน; archive ถูกปฏิเสธขณะแผนมีผล; ลบโครงการถูกปฏิเสธตราบใดที่ยังมีแผน |
-| 14 | Export | projection ไม่เก็บ — สร้างจาก snapshot ของ version in force (หรือ draft ก่อนมีผล) |
+| 14 | Export | **deferred ออกจาก scope v1** (ADR-0019) — FE ทำใน browser; คง design projection ไว้เป็นสำรอง |
+| 15 | Session refresh | 401 `token_expired` → `POST /auth/refresh` (cookie + rotation) → retry — flow ใหม่ใน sequence-diagrams |
+| 16 | Notification lifecycle | poll `GET /notifications` (~60 วิ + refocus) + read/read_all/delete — flow ใหม่ใน sequence-diagrams |
+| 17 | AI chat / thread | chat + scope `unscoped`, thread decision/clear/adopt, Idempotency-Key — flow ใหม่ใน sequence-diagrams |
+| 18 | File lifecycle | upload ที่ project → archive / delete + `409 file_in_use` — flow ใหม่ใน sequence-diagrams |
 
 ---
 
@@ -559,39 +565,36 @@ sequenceDiagram
 }
 ```
 
-`contracts/` ยังรวม error envelope, SSE event shapes (`status`/`tool`/`token`/`result`) และ zod schema ของ request/response ที่ controller อ้าง — แยกจาก `domain-profiles/` เพื่อให้เพิ่ม domain ใหม่ได้โดยไม่ต้องแตะ contracts
+`contracts/` ยังรวม error envelope, SSE event shapes (`status`/`tool`/`delta`/`proposal`/`done`/`error` — ADR-0018) และ zod schema ของ request/response ที่ controller อ้าง — แยกจาก `domain-profiles/` เพื่อให้เพิ่ม domain ใหม่ได้โดยไม่ต้องแตะ contracts
 
 ### 8.2 Security
 
-- **Authentication:** JWT access token อายุสั้น + refresh token เก็บใน `refresh_tokens` (revoke ได้ — การปิดบัญชีจะ revoke ทั้งหมด)
+- **Authentication:** JWT access token อายุสั้น (15 นาที) ส่งผ่าน header + refresh token เก็บใน `refresh_tokens` (revoke ได้ — การปิดบัญชีจะ revoke ทั้งหมด)
+- **Token rotation (ADR-0016):** refresh token ส่งผ่าน **httpOnly cookie** แบบ rotating TTL 14 วัน พร้อม token-family reuse detection (ใช้ refresh เก่าซ้ำ → revoke ทั้ง token family)
 - **Password:** salted hash ด้วย **bcrypt/argon2id** (เบี่ยงจาก ERD อย่างมีเจตนา — ดู ADR-0006)
 - **Authorization:** ตาม role — sign-up เองได้เฉพาะ researcher; admin provisioning สร้างบัญชี committee/chief/admin ด้วย username + email + **รหัสผ่านชั่วคราว** (แสดงครั้งเดียว บังคับเปลี่ยนตอน login แรก — ไม่พึ่ง email ในการเริ่มระบบ)
 - **Audit:** การระบุผู้กระทำอ่านจาก JWT subject ทุก mutation
-- **Secrets:** env เท่านั้น (TC-7); token ส่งผ่าน header เท่านั้น — ไม่หลุดเข้า access log (SSE ใช้ fetch + ReadableStream)
+- **Secrets:** env เท่านั้น (TC-7); access token ส่งผ่าน header เท่านั้น — ไม่หลุดเข้า access log (SSE ใช้ fetch + ReadableStream)
 - **ช่องที่รับรู้และยอมรับไว้:** email verification ยังไม่ทำ (OC-4)
 
 ### 8.3 Error Handling
 
-Envelope เดียวทั้ง API:
+Envelope เดียวทั้ง API สไตล์ Stripe (ADR-0014):
 
 ```jsonc
-// 422
 {
   "error": {
-    "code": "VALIDATION_FAILED",
-    "errors": [
-      {
-        "path": "/datasets/1/domain_metadata/sample_size",
-        "code": "REQUIRED",
-        "message": "…",
-      },
-    ],
+    "type": "invalid_request_error",
+    "code": "required_field_missing",   // จาก error code catalog ของ FE contract — canonical
+    "message": "…",
+    "param": "/datasets/1/domain_metadata/sample_size", // JSON pointer — เฉพาะ error ที่ชี้ draft
   },
 }
 ```
 
-- `path` เป็น **JSON pointer** ที่ชี้ตำแหน่งใน draft ตรง ๆ — frontend นำไปทำ "คลิกไปแก้จุดนี้" ได้ทันที
-- `409` สำหรับ `draft_revision` ไม่ตรง (optimistic concurrency) และ pending ค้าง
+- `param` เป็น **JSON pointer** ที่ชี้ตำแหน่งใน draft เฉพาะ error ที่ผูกกับ draft — frontend นำไปทำ "คลิกไปแก้จุดนี้" ได้ทันที; error ทั่วไป (401/403/404/409/429) ใช้ `code` + `message` แบบแบน
+- **Status codes แยกหน้าที่ (ADR-0014):** `400` = request ผิดรูป/พารามิเตอร์ขาด (รวม MIME ไม่ถูกต้อง), `422` = "ข้อมูลไม่ผ่านกฎ" (draft validation, proposal parse ไม่ได้), `409` = สถานะขัดกัน (`draft_conflict`, `revision_pending`, `username_taken` รวมอยู่ด้วย)
+- **Error code catalog:** ใช้ catalog ที่ตั้งชื่อต่อ endpoint ของ FE contract เป็น canonical (`draft_conflict`, `note_required`, `not_a_reviewer`, `plan_in_force`, `file_in_use`, `proposal_settled` ฯลฯ) — ทุก endpoint อ้างจากชุดเดียวกัน เพราะ FE switch บน string เหล่านี้
 - field policy นิยามแบบ path-based — ใช้ระบบ JSON pointer เดียวกันทั้งสาย diff → classify → error path:
 
 ```jsonc
@@ -637,8 +640,8 @@ Envelope เดียวทั้ง API:
 
 ### 8.6 Real-time
 
-- Notification push ผ่าน SSE (`GET /notifications/stream`) — event bus in-process ซ่อนอยู่หลัง `NotificationPublisher` port; row สร้างใน transaction ของเหตุการณ์ แล้ว publish หลัง commit สำเร็จเท่านั้น
-- AI streaming ใช้ SSE เช่นกัน — event shapes (`status`/`tool`/`token`/`result`) นิยามใน `contracts/`
+- **Notification เป็น polling ไม่มี push (ADR-0013):** `GET /notifications` ทุก ~60 วิ + ตอน refocus — row สร้างใน transaction ของเหตุการณ์; ไม่มี `GET /notifications/stream` แล้ว; คง `NotificationPublisher` port ไว้เผื่อสลับ push ภายหลัง (adapter `InProcessEventBus` คง publish หลัง commit สำเร็จเท่านั้น)
+- AI streaming ใช้ SSE — event shapes (`status`/`tool` ระหว่างทาง → `delta` ข้อความ → `proposal` ผล structured → `done|error` ปิด — ADR-0018) นิยามใน `contracts/`; event ที่ client ไม่รู้จักต้องเมิน (กฎ SSE) เพื่อ forward compatibility; wire format ของ OpenRouter (OpenAI-compatible) ถูกแปลภายใน `AiClient` adapter เท่านั้น — ห้ามรั่วถึง FE
 - frontend ใช้ **fetch + ReadableStream** ทุกจุด — `EventSource` แนบ Authorization header ไม่ได้ และ AI action เป็น POST ซึ่ง EventSource ใช้ไม่ได้อยู่แล้ว (ADR-0008)
 
 ### 8.7 Configuration
@@ -651,7 +654,7 @@ Envelope เดียวทั้ง API:
   "auth": {
     "_appliesTo": ["src/features/auth/"],
     "accessTokenTtlMinutes": 15,
-    "refreshTokenTtlDays": 30,
+    "refreshTokenTtlDays": 14,
   },
   "files": {
     "_appliesTo": ["src/features/files/"],
@@ -672,11 +675,12 @@ Envelope เดียวทั้ง API:
 
 - `tests/unit/` mirror โครงสร้าง `src/` — unit test-first บน domain engine (pure functions)
 - `tests/integration/` — Postgres, disk, OpenRouter (mock server), SMTP
-- `tests/e2e/` — supertest ต่อ Postgres จริง ครบ 14 flows — ทุกกฎ preservation มี e2e test คอยคุ้มกัน
+- `tests/e2e/` — supertest ต่อ Postgres จริง ครบ 18 flows — ทุกกฎ preservation มี e2e test คอยคุ้มกัน
 - `tests/fixtures/` — แผนตัวอย่าง, draft JSON, .docx สำหรับทดสอบ
 
 ### 8.9 Exports
 
+- **Deferred ออกจาก scope v1 (ADR-0019)** — frontend ตัดสินแล้วว่า "Exports stay in the browser, out of the API"; หัวข้อนี้คง design เดิมไว้เป็นสำรองกรณี browser export ไม่พอ (ไฟล์ใหญ่, audit ต้อง signature ฝั่ง server) จึงยังไม่ลบทิ้ง
 - เป็น **projection ไม่เก็บ** — คือสร้างเอกสาร export ขึ้นมาตอนถูกขอ ไม่เก็บซ้ำในฐานข้อมูล: `GET /dmps/{id}/export?format=madmp-v3|rda-v1.3`
 - แหล่ง: snapshot ของ version in force (หลังมีผล) หรือ draft (ก่อนมีผล) พร้อมสถานะ `not submitted`/`submitted`
 - approval block ตาม plan_mode + approver; independent → `not applicable`
@@ -687,31 +691,14 @@ Envelope เดียวทั้ง API:
 
 ## 9. Architecture Decisions
 
-(เดิมแยกเป็น ADR เอกสารแยกต่างหาก — รวมไว้ในเอกสารฉบับเดียว; ADR = Architecture Decision Record คือบันทึกการตัดสินใจทางสถาปัตยกรรมพร้อมเหตุผล)
+ADR ทั้งหมดเก็บเป็นไฟล์แยกใน [`docs/decisions/`](../decisions/) (ADR = Architecture Decision Record คือบันทึกการตัดสินใจทางสถาปัตยกรรมพร้อมเหตุผล) — ADR-0001–0012 เป็นการตัดสินชุดออกแบบแรก (2026-10-19), ADR-0013–0024 เป็นผลของการเทียบกับ frontend contract และ grilling session (2026-10-26): การตัดสิน cross-cutting (error/pagination/token/path), AI streaming events, notification polling, export deferred, โมเดล draft/revision/finalize, ไฟล์-tasks-AI contract, และ read models + endpoints ที่เติม
 
-| ID | Decision | Status | Date |
-| --- | --- | --- | --- |
-| ADR-0001 | Modular monolith — instance เดียว, scale แนวตั้ง, in-process event bus; ports เตรียมไว้สำหรับสลับ S3/Redis ภายหลัง | Accepted | 2026-10-19 |
-| ADR-0002 | ทุก I/O ที่เปลี่ยน implementation ได้ผ่าน port (`FileStorage`, `NotificationPublisher`, `AiClient`, `MailSender`); cross-feature เป็น direct service inject — ไม่มี event bus ทั่วไป | Accepted | 2026-10-19 |
-| ADR-0003 | โมเดลข้อมูลแบบผสม — DATASET/DISTRIBUTION/CONTRIBUTOR/COST เป็น JSONB ใน `dmps.draft`, DMP_VERSION เป็นตารางจริงบังคับ constraint ด้วย Postgres | Accepted | 2026-10-19 |
-| ADR-0004 | TypeScript + NestJS (ปฏิเสธ Go/Python-FastAPI) — type sharing ผ่าน zod, SSE first-class, JSON เป็นจุดแข็ง | Accepted | 2026-10-19 |
-| ADR-0005 | เขียน ReAct loop เองบน `AiClient` port — ไม่ใช้ LangChain | Accepted | 2026-10-19 |
-| ADR-0006 | bcrypt/argon2id แทน SHA-256 ของ ERD (เบี่ยงอย่างมีเจตนา) | Accepted | 2026-10-19 |
-| ADR-0007 | Committee queue เป็น global queue ไม่มีการมอบหมาย — หนึ่งเวอร์ชัน หนึ่ง decision | Accepted | 2026-10-19 |
-| ADR-0008 | SSE auth ผ่าน fetch + ReadableStream (ไม่ใช้ EventSource) | Accepted | 2026-10-19 |
-| ADR-0009 | Provisioning ด้วยรหัสผ่านชั่วคราวบังคับเปลี่ยน; password reset ผ่าน SMTP (dev: MailPit) | Accepted | 2026-10-19 |
-| ADR-0010 | zod → OpenAPI ผ่าน `@asteasolutions/zod-to-openapi` + `@nestjs/swagger`; ไม่ commit `openapi.json` — ใช้ runtime endpoint `GET /openapi-json` | Accepted | 2026-10-19 |
-| ADR-0011 | Field policy เป็น path-based registry ตรงระบบ JSON pointer ของ error envelope — expose `GET /field-policy` | Accepted | 2026-10-19 |
-| ADR-0012 | UUID v7 mint โดย backend ทุก entity + export เติม prefix ด้วย dmp_id (ปิด open question หมวด 9 ของ requirement) | Accepted | 2026-10-19 |
-
-**เลื่อนการตัดสิน (รอ repo Frontend — TC-5):** ข้อมูลต่อไปนี้มีอยู่เฉพาะใน repo **Frontend** (github.com/Open-Science-and-Data-management/Frontend — ยังไม่ได้อยู่บนดิสก์) repo `ui` ที่อยู่บนดิสก์เป็น mock dashboard ของ requirement ฉบับเก่า ไม่เกี่ยวกัน เมื่อได้ repo แล้วให้ clone เป็น **read-only reference** แล้วตัดสิน 4 ข้อนี้ต่อ:
+**เลื่อนการตัดสิน (รอข้อมูลจาก repo Frontend — TC-5):** ตัดสินไปแล้ว 2 ข้อจาก frontend contract บนดิสก์ — enum evidence = `none|file|url|rdm_deposit` (ADR-0022) และรูปร่าง checklist ตาม contract (ADR-0022) — คงเหลือ 2 ข้อ:
 
 | เรื่องที่รอ | ต้องดูจากไฟล์ | คำถามที่รอคำตอบ |
 | --- | --- | --- |
 | domain profiles ข้อมูลจริง | `src/schemas/dataset/domain-profiles.ts` | ชื่อ field ภายในของ 8 profiles (generic + 7 domains) — port เข้า `features/shared/domain-profiles/` ให้ BE/FE validate ชุดเดียวกัน |
 | ชุด tasks แรก | (ดูต้นแบบการสร้าง tasks ใน repo) | ชุด tasks แรกเมื่อแผนมีผลมีอะไรบ้าง — ต่อ dataset ตาม lifecycle stage หรือ template เดียวต่อแผน |
-| รูปร่าง checklist | (ดูรูปร่าง checklist ใน repo) | ถ้าไม่มีรูปร่างเดิม → ใช้ `{ id, label, done }[]` (progress = done ÷ ทั้งหมด, 0 ข้อ = 0%) |
-| enum ของ evidence | (ดูการใช้ evidence ใน repo) | ถ้าไม่มีใครใช้ `rdm_deposit` → ตัดเหลือ `none\|file\|url\|doi`; ก่อนหน้านั้นครอบค่าครบ 5 ค่า |
 
 ---
 
@@ -750,7 +737,7 @@ mindmap
 | QS-5 | แก้โมเดล draft (เพิ่มฟิลด์) | Maintainability | แก้ zod schema ที่เดียว — BE validation, BE type, FE type เปลี่ยนตามทั้งหมด |
 | QS-6 | โหลด peak ~2,000 ผู้ใช้ | Performance | instance เดียวรองรับได้ — คอขวดจริงคือ network (OpenRouter/Postgres) ไม่ใช่ CPU |
 | QS-7 | สลับ disk → S3 storage | Modifiability | แตะเฉพาะ adapter ของ `FileStorage` port — domain logic ไม่เปลี่ยน |
-| QS-8 | regression ของกฎ preservation | Reliability | e2e ครบ 14 flows ต่อ Postgres จริง — ทุกกฎ preservation มี e2e คุ้มกัน |
+| QS-8 | regression ของกฎ preservation | Reliability | e2e ครบ 18 flows ต่อ Postgres จริง — ทุกกฎ preservation มี e2e คุ้มกัน |
 
 ---
 
@@ -761,7 +748,7 @@ mindmap
 | ID | Risk | Impact | Probability | Mitigation |
 | --- | --- | --- | --- | --- |
 | R-1 | Email verification ยังไม่ทำ — ใครก็สมัครด้วย email ใดก็ได้ | Medium | High (เกิดทันที) | จดเป็นช่องที่รับรู้และยอมรับไว้ — ทำในรอบถัดไปเมื่อสถาบันพร้อม |
-| R-2 | 4 การตัดสินรอ repo Frontend (profiles, ชุด tasks แรก, checklist, evidence enum) | Medium | Certain จนกว่าจะได้ repo | ครอบค่าไว้ก่อนอย่างครบถ้วน (checklist `{id,label,done}`, evidence ครบ 5 ค่า) — ตัดสินต่อเมื่อ clone repo เป็น read-only reference |
+| R-2 | 2 การตัดสินรอ repo Frontend (domain profiles ข้อมูลจริง, ชุด tasks แรก) — เดิม 4 ข้อ ตัดสินไปแล้ว 2 ผ่าน frontend contract (checklist, evidence enum — ADR-0022) | Medium | Certain จนกว่าจะได้ repo | ครอบค่าไว้ก่อนอย่างครบถ้วน — ตัดสินต่อเมื่อ clone repo เป็น read-only reference |
 | R-3 | Release = restart — downtime สั้น ๆ ทุกครั้ง | Low | ทุก release | ยอมรับได้ที่ scale นี้ (TC-2) — ถ้าไม่พอจึงพิจารณา topology ใหม่ |
 | R-4 | ความเร็ว raw ต่ำกว่า Go | Low | Low | workload ไม่มีงานหนักทาง CPU — ถ้ากลายเป็นคอขวด จุดแก้คือ topology ไม่ใช่เปลี่ยนภาษา |
 | R-5 | Backup เป็น manual process ของ ops | Medium | — | จดใน runbook; pg_dump ตามรอบ + snapshot volume |
@@ -798,13 +785,13 @@ mindmap
 | **restore** | โหลด snapshot ของเวอร์ชันหนึ่งเข้า working draft — เวอร์ชันที่รอ decision restore ไม่ได้; นอกนั้นนับเป็นการแก้ไขธรรมดา (rollback ข้ามการอนุมัติไม่ได้) จด `restored_from` |
 | **preservation** | หลักการว่าสิ่งที่ผู้ใช้บันทึกไว้ไม่มีทางถูกทำลาย — การ archive/cancel จะจดร่องรอยไว้เท่านั้น ไม่มีการลบ |
 | **archive** | การพักแผนไว้ (ไม่ลบ) — ปฏิเสธขณะแผนมีผล; หายจาก list ปกติ แต่ค้นเจอผ่าน filter _Archived_ |
-| **task** | งานที่เกิดขึ้นจากแผนที่มีผล — มี checklist, `progress_percent` คำนวณอัตโนมัติ, evidence หลายรูปแบบ (file / URL / DOI) |
-| **evidence** | หลักฐานการทำงานของ task — `{none, file, url, doi, rdm_deposit}` (enum รอตัดสิน — หมวด 9) |
+| **task** | งานที่เกิดขึ้นจากแผนที่มีผล — มี checklist, `progress_percent` คำนวณอัตโนมัติ, evidence หลายรูปแบบ (file / URL / rdm_deposit), กฎ `use_complete`/`output_locked`/evidence requirement 3 ระดับ (`declared`/`evidence_linked`/`system_verified`) |
+| **evidence** | หลักฐานการทำงานของ task — `{none, file, url, rdm_deposit}` (ตัดสินแล้วตาม ADR-0022 — DOI รวมอยู่ใน `rdm_deposit.ref`) |
 | **domain profile** | code registry 8 ชุด (generic + 7 research domains) — กำหนดฟิลด์ `domain_metadata` ของ dataset ในแต่ละ domain, validate อย่างเคร่งครัด |
 | **field policy** | path-based registry ของฟิลด์ major — เป็นชุดเดียวกับที่ frontend ใช้แสดง "ต้องขออนุมัติใหม่", expose ผ่าน `GET /field-policy` |
 | **draft_revision** | เลข optimistic concurrency บน draft — PUT ต้องแนบค่าที่ client เห็นครั้งล่าสุด ไม่ตรง → `409` |
 | **ReAct loop** | agent loop ที่โมเดลตัดสินใจเรียก tools เองหลายรอบก่อนคืนคำตอบ — tools 3 ตัว: `read_proposal`, `read_draft`, `read_domain_profiles` |
-| **token budget** | โควตา AI ต่อผู้ใช้ (`ai_token_limit` / `ai_token_used`) — เช็กด้วย estimate ก่อนเริ่ม run, reconcile ตอนจบ |
+| **token budget** | โควตา AI ต่อผู้ใช้ (`ai_token_limit` / `ai_token_used` + `quota_resets_at` reset รายเดือน) — นับ output + uncached input, cached input ลดเหลือ 10%, คิดทุก call รวมที่ fail/abort, pre-flight เป็นแค่ hint (ADR-0023) |
 | **port / adapter** | interface ของ I/O ที่เปลี่ยน implementation ได้ (`FileStorage`, `NotificationPublisher`, `AiClient`, `MailSender`) กับ implementation จริงของมัน |
 | **project-dna** | format ของ layout ที่อ้างถึง — feature-driven, ชื่อโฟลเดอร์ตัวพิมพ์เล็ก, `features/shared/` สำหรับ cross-feature code |
 
@@ -813,6 +800,6 @@ mindmap
 เอกสารนี้เป็นเอกสารสถาปัตยกรรมฉบับเดียวของระบบ
 
 - ความต้องการเชิงพฤติกรรมอยู่ที่ `docs/architecture/requirement.md`
-- 14 flows อยู่ที่ `docs/architecture/sequence-diagrams.md`
+- 18 flows อยู่ที่ `docs/architecture/sequence-diagrams.md`
 - แผนภาพ C4 ทั้งหมดอยู่ที่ `docs/architecture/c4/`
 - เมื่อแก้สถาปัตยกรรม ให้แก้เอกสารนี้ก่อน แล้วอัปเดตแผนภาพใน c4/ ตาม
