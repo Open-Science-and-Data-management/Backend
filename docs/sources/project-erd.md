@@ -27,6 +27,7 @@ erDiagram
     DATASET }o--|| DOMAIN_PROFILE : validated_by
     DATASET o|--o{ TASK : may_scope
     FILE_RECORD o|--o{ TASK : may_be_attached_to
+    FILE_RECORD ||--o{ FILE_CHUNK : "chunked + embedded (ADR-0025)"
     FILE_RECORD o|--o{ DISTRIBUTION : may_back
     DMP o|--o{ AI_THREAD_ENTRY : scopes
 
@@ -204,6 +205,16 @@ erDiagram
         date superseded_at
     }
 
+    FILE_CHUNK {
+        string id PK "optional in schema"
+        string file_id FK "ON DELETE CASCADE"
+        int chunk_index
+        string content
+        string heading_path "ตำแหน่งในเอกสาร เช่น หัวข้อ > หัวข้อย่อย"
+        real embedding "vector 384 dims — multilingual-e5-small"
+        string embedding_model "รุ่นที่ embed — ไม่ตรง config → re-embed ทั้งไฟล์"
+    }
+
     NOTIFICATION {
         string notification_id PK "optional in schema"
         string user_id FK
@@ -285,6 +296,10 @@ Tasks and their evidence are the record of work actually done, so:
 - **A finished task can't be cancelled**, which would overwrite the record of its completion; it can only be reopened.
 - **A cancellation records what it replaced** (`cancelled_from`, the reason, and for a removed output its title). When a version brings an output back, tasks cancelled by its removal are _offered_ for reopening, never reopened automatically, since their cancellation went through sign-off. Each is chosen individually, returns to the status it had, and is relinked to the returned output (matched by id, or by the recorded title if it came back under a new id). Tasks cancelled by hand aren't offered.
 - `deleteProject` refuses while a project has plans, archived ones included, since deleting it would orphan them.
+
+## Document chunks (RAG — ADR-0025)
+
+The active proposal is the RAG corpus. At upload it is parsed, split into chunks by heading/paragraph and embedded with `multilingual-e5-small`; each chunk keeps its position (`chunk_index`, `heading_path`) so the AI's answers can cite where in the document they came from. Chunks are cached per `file_id` — one document, embedded once, used for the project's lifetime. They cascade with the file (supersede or delete = gone), and a chunk row whose `embedding_model` no longer matches the configured model is re-embedded whole on next use.
 
 ## Calendar dates
 

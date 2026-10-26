@@ -327,6 +327,7 @@ controller (HTTP/SSE, บาง)
 | `dmp_versions` | `UNIQUE (dmp_id, number)` + **partial unique `UNIQUE (dmp_id) WHERE status='pending'`** — บังคับ requirement หมวด 4.3/4.4 โดย Postgres เอง; snapshot/changes/minor_edits/carried/dropped เก็บเป็น JSONB |
 | `tasks` | FK dmps; `progress_percent` คำนวณจาก checklist เสมอ; **ไม่มี `file_id`** — evidence เก็บ ref (ADR-0022) |
 | `file_records` | purpose/docx-extracted-text (เก็บ text ไว้ในตาราง ไม่ใช่ใน metadata — เพื่อให้ agent อ่านของสำเร็จรูป), `archived_at` (ไฟล์ evidence archive เท่านั้น — ADR-0022/0024) |
+| `file_chunks` | FK → file_records **ON DELETE CASCADE**, `chunk_index`, `content`, `heading_path`, `embedding real[]` (384 dims — multilingual-e5-small), `embedding_model` (ไม่ตรง config ปัจจุบัน → re-embed ทั้งไฟล์), index บน `file_id` — query กรอง file_id ก่อนแล้ว cosine ฝั่ง app (~1 ms ต่อเอกสาร), ไม่มี pgvector/ANN (ADR-0025) |
 | `notifications` | type ตาม requirement หมวด 7, read_at nullable — ลบได้ (UX ไม่ใช่ record, ADR-0024) |
 | `ai_thread_entries` | kind user/event/assistant, **scope = dmp_id nullable \| `unscoped`** (ADR-0023), token_count, decision accepted/rejected/stale |
 | `reopen_offers` | ข้อเสนอเปิดคืน task หลัง output กลับมา — จดว่าเสนออะไรแล้ว + user accept/dismiss (ADR-0022) |
@@ -465,7 +466,7 @@ sequenceDiagram
 
 ### 6.3 Scenario: AI action (ReAct loop, SSE — flow 3)
 
-โควตาเป็น pre-flight hint (ไม่ปฏิเสธ run เดียวที่ล้น) + บังคับ `Idempotency-Key` (replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ — ADR-0023) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 3 ตัว (`read_proposal` อ่านจาก extracted text, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน) สตรีม SSE เป็น `status`/`tool` (progress, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal — ADR-0018) ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ — นับ output + uncached input (cached นับ 10%) คิดทุก call รวมที่ fail/abort extracted text ของ proposal ถูก parse ตอน upload (mammoth, in-process) เก็บใน `file_records` — agent อ่านของสำเร็จรูป ไม่ parse ซ้ำ wire format ของ OpenRouter ถูกแปลภายใน `AiClient` adapter — ห้ามรั่วถึง FE
+โควตาเป็น pre-flight hint (ไม่ปฏิเสธ run เดียวที่ล้น) + บังคับ `Idempotency-Key` (replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ — ADR-0023) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 4 ตัว (`read_proposal` อ่านจาก extracted text, `search_proposal` query RAG บนเอกสาร, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน — ADR-0025) สตรีม SSE เป็น `status`/`tool` (progress, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal — ADR-0018) ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ — นับ output + uncached input (cached นับ 10%) คิดทุก call รวมที่ fail/abort **RAG (ADR-0025)**: proposal active ตัวเดียวต่อโปรเจกต์คือ corpus ทั้งหมด — ตอน upload ระบบ parse .docx ด้วย mammoth (in-process) เก็บ extracted text ใน `file_records` แล้ว chunk ตาม heading/ย่อหน้า (~400–500 token วัดด้วย tokenizer ของโมเดล, overlap ~10% — ค่า tunable ผ่าน config) แล้ว embed ด้วย multilingual-e5-small (in-process) ลงตาราง `file_chunks` (`real[]` + `chunk_index` + `heading_path` + `embedding_model`) — embedding ไม่นับโควตา AI และถ้าล้มเหลว upload fail `422` เหมือน parse ไม่ได้ เวกเตอร์ cache ผูกกับ `file_id` — เอกสารตัวเดียวใช้จนจบโปรเจกต์ จึง embed ครั้งเดียว; ไฟล์เก่าก่อน feature นี้ backfill แบบ lazy ครั้งแรกที่ถูกเรียกใช้; chunks CASCADE ตาม `file_records` (supersede/ลบไฟล์ = ระเบิดตาม — retrieval ชี้ proposal active เท่านั้น); chunks ที่ embed ด้วยรุ่นโมเดลไม่ตรง config ปัจจุบัน re-embed ทั้งไฟล์ครั้งเดียว ตอน query: `search_proposal` กรอง `WHERE file_id` ก่อน (candidate set ผูกกับเอกสารเดียว ไม่ว่าระบบจะมีกี่โปรเจกต์) แล้ว cosine ฝั่ง app (~1 ms ที่ ~200–1,000 chunks — brute force ชนะ ANN ที่ N นี้ และแม่น 100%) คืน top-k = 5 chunks พร้อมตำแหน่ง; ถ้า RAG ยังไม่พร้อม tool บอก agent ให้ fallback ไป `read_proposal` — ไม่ error ทั้ง run wire format ของ OpenRouter ถูกแปลภายใน `AiClient` adapter — ห้ามรั่วถึง FE
 
 ```mermaid
 sequenceDiagram
@@ -476,15 +477,28 @@ sequenceDiagram
     participant AI as OpenRouter (system key)
     participant DB as DB
 
+    rect rgb(240, 248, 255)
+    Note over R,DB: เฟส upload — เตรียมความรู้ของเอกสารครั้งเดียว ใช้ตลอดโปรเจกต์ (ADR-0025)
+    R->>FE: อัปโหลด proposal (.docx)
+    FE->>BE: POST /projects/{id}/files
+    BE->>BE: parse mammoth (in-process) → extracted text
+    BE->>BE: chunk ตาม heading/ย่อหน้า<br/>(~400–500 token, overlap ~10% — tunable)
+    BE->>BE: embed ทุก chunk ด้วย multilingual-e5-small<br/>(in-process · ไม่นับโควตา AI ·<br/>ล้มเหลว → 422 เหมือน parse ไม่ได้)
+    BE->>DB: file_records (extracted text)<br/>+ file_chunks (chunk_index, heading_path,<br/>embedding_model, embedding real[])
+    BE-->>FE: สำเร็จ — เวกเตอร์ cache ผูก file_id<br/>(เอกสารตัวเดียวใช้จนจบโปรเจกต์ ไม่ embed ซ้ำ)
+    end
+
     R->>FE: เลือก action ของ AI<br/>(analyze-proposal / chat / suggest /<br/>generate-tasks / checklist / regenerate-field)
     FE->>BE: POST /dmps/{scope}/ai/{action} (SSE)<br/>+ Idempotency-Key · scope = dmp_id | unscoped
     BE->>BE: เช็ก Idempotency-Key — เคยมี → replay
     BE->>DB: pre-flight check โควตา (hint — ไม่ปฏิเสธ run เดียวที่ล้น)
     BE->>DB: persist ai_thread_entries (kind=user)
-    BE->>AI: เริ่ม ReAct loop<br/>tools: read_proposal (extracted text),<br/>read_draft, read_domain_profiles
+    BE->>AI: เริ่ม ReAct loop<br/>tools: read_proposal (extracted text),<br/>search_proposal (query RAG),<br/>read_draft, read_domain_profiles
     loop จน AI ให้คำตอบสุดท้าย
-        AI->>BE: ขอเรียก tool
-        BE->>BE: รัน tool (ไม่มี web search ·<br/>ไม่มี tool เขียน draft แทน)
+        AI->>BE: ขอเรียก tool<br/>(คำถามเกี่ยวกับเอกสาร → search_proposal)
+        BE->>DB: WHERE file_id = proposal active → chunks
+        BE->>BE: embed query + cosine ฝั่ง app (~1 ms)<br/>→ top-5 chunks (คำนวณตรง แม่น 100% —<br/>ไม่ใช้ ANN/pgvector ที่ N นี้)<br/>(รุ่นโมเดลไม่ตรง config → re-embed ทั้งไฟล์ครั้งเดียว)
+        BE-->>AI: chunks + ตำแหน่ง (chunk_index, heading path)<br/>(RAG ไม่พร้อม → บอก agent ให้ใช้<br/>read_proposal แทน — ไม่ error ทั้ง run)
         BE->>DB: จด ai_thread_entries (kind=event)
         BE-->>FE: SSE event: status / tool
         BE-->>AI: ส่งผล tool กลับให้ AI ใช้ต่อ
@@ -495,7 +509,7 @@ sequenceDiagram
     BE->>DB: reconcile token จริง: output + uncached input<br/>(cached นับ 10% · run เดียวล้นโควตาได้ ไม่ตัดกลางคัน)
     BE-->>FE: ปิด stream (terminal: done | error)
     R->>FE: แก้ proposals ได้ทั้งหมด → apply ลง draft (flow #4)
-    Note over AI,DB: ถ้าล้มเหลว/abort กลางทาง — SSE error, งบ token ที่ใช้ไปแล้วยังนับ<br/>retry ด้วย Idempotency-Key เดิมภายใน 24 ชม. ไม่โดนโควตาซ้ำ<br/>· ทุกผลลัพธ์เป็นข้อเสนอ — ไม่มีอะไรเขียนทับ draft อัตโนมัติ
+    Note over AI,DB: ถ้าล้มเหลว/abort กลางทาง — SSE error, งบ token ที่ใช้ไปแล้วยังนับ<br/>retry ด้วย Idempotency-Key เดิมภายใน 24 ชม. ไม่โดนโควตาซ้ำ<br/>· ทุกผลลัพธ์เป็นข้อเสนอ — ไม่มีอะไรเขียนทับ draft อัตโนมัติ<br/>· lifecycle: chunks CASCADE ตาม file_records — supersede/ลบ →<br/>embed ใหม่จากไฟล์ใหม่, retrieval ชี้ proposal active เท่านั้น<br/>· ไฟล์เก่าก่อน feature นี้ → backfill lazy ครั้งแรกที่ถูกใช้
 ```
 
 ### 6.4 สถานการณ์อื่น (สรุป — diagram เต็มใน sequence-diagrams.md)
@@ -642,6 +656,7 @@ Envelope เดียวทั้ง API สไตล์ Stripe (ADR-0014):
 
 - **Notification เป็น polling ไม่มี push (ADR-0013):** `GET /notifications` ทุก ~60 วิ + ตอน refocus — row สร้างใน transaction ของเหตุการณ์; ไม่มี `GET /notifications/stream` แล้ว; คง `NotificationPublisher` port ไว้เผื่อสลับ push ภายหลัง (adapter `InProcessEventBus` คง publish หลัง commit สำเร็จเท่านั้น)
 - AI streaming ใช้ SSE — event shapes (`status`/`tool` ระหว่างทาง → `delta` ข้อความ → `proposal` ผล structured → `done|error` ปิด — ADR-0018) นิยามใน `contracts/`; event ที่ client ไม่รู้จักต้องเมิน (กฎ SSE) เพื่อ forward compatibility; wire format ของ OpenRouter (OpenAI-compatible) ถูกแปลภายใน `AiClient` adapter เท่านั้น — ห้ามรั่วถึง FE
+- **RAG บนเอกสาร (ADR-0025):** proposal active ตัวเดียวต่อโปรเจกต์คือ corpus — ตอน upload ระบบ parse → chunk → embed ด้วย multilingual-e5-small **in-process** (ไม่มี background job — convention เดิม) ลง `file_chunks` (`real[]` + `embedding_model`, CASCADE ตามไฟล์); retrieval กรอง `file_id` ก่อนแล้ว cosine ฝั่ง app (brute force — แม่น 100% และ ~1 ms ที่ขนาดเอกสารเดียว, ไม่มี pgvector/ANN/vector DB) เวกเตอร์ embed ครั้งเดียวต่อไฟล์ (cache ตลอดโปรเจกต์ — เอกสารเดียวใช้จนจบ), ไฟล์เก่า backfill lazy, รุ่นโมเดลไม่ตรง config → re-embed ทั้งไฟล์; embedding **ไม่นับโควตา AI** — เป็น infra เหมือน parse; ล้มเหลวตอน upload → `422` เหมือน parse ไม่ได้; tool `search_proposal` คืน top-5 chunks พร้อมตำแหน่ง และถ้า RAG ไม่พร้อมจะบอก agent ให้ fallback `read_proposal` แทน (tool ภายใน — FE contract ไม่เปลี่ยน)
 - frontend ใช้ **fetch + ReadableStream** ทุกจุด — `EventSource` แนบ Authorization header ไม่ได้ และ AI action เป็น POST ซึ่ง EventSource ใช้ไม่ได้อยู่แล้ว (ADR-0008)
 
 ### 8.7 Configuration
@@ -660,6 +675,12 @@ Envelope เดียวทั้ง API สไตล์ Stripe (ADR-0014):
     "_appliesTo": ["src/features/files/"],
     "maxFileSizeMb": 25,
     "storagePath": "data/files",
+    "rag": {                      // ADR-0025
+      "chunkTargetTokens": 450,   // ตัดตาม heading/ย่อหน้า แล้ว pack ถึงขนาดเป้า
+      "chunkOverlapPercent": 10,
+      "topK": 5,
+      "embeddingModel": "intfloat/multilingual-e5-small", // 384 dims — เปลี่ยน → re-embed ทั้งไฟล์อัตโนมัติ (embedding_model column)
+    },
   },
   "ai": {
     "_appliesTo": ["src/features/ai/"],
@@ -790,7 +811,7 @@ mindmap
 | **domain profile** | code registry 8 ชุด (generic + 7 research domains) — กำหนดฟิลด์ `domain_metadata` ของ dataset ในแต่ละ domain, validate อย่างเคร่งครัด |
 | **field policy** | path-based registry ของฟิลด์ major — เป็นชุดเดียวกับที่ frontend ใช้แสดง "ต้องขออนุมัติใหม่", expose ผ่าน `GET /field-policy` |
 | **draft_revision** | เลข optimistic concurrency บน draft — PUT ต้องแนบค่าที่ client เห็นครั้งล่าสุด ไม่ตรง → `409` |
-| **ReAct loop** | agent loop ที่โมเดลตัดสินใจเรียก tools เองหลายรอบก่อนคืนคำตอบ — tools 3 ตัว: `read_proposal`, `read_draft`, `read_domain_profiles` |
+| **ReAct loop** | agent loop ที่โมเดลตัดสินใจเรียก tools เองหลายรอบก่อนคืนคำตอบ — tools 4 ตัว: `read_proposal`, `search_proposal` (RAG — ADR-0025), `read_draft`, `read_domain_profiles` |
 | **token budget** | โควตา AI ต่อผู้ใช้ (`ai_token_limit` / `ai_token_used` + `quota_resets_at` reset รายเดือน) — นับ output + uncached input, cached input ลดเหลือ 10%, คิดทุก call รวมที่ fail/abort, pre-flight เป็นแค่ hint (ADR-0023) |
 | **port / adapter** | interface ของ I/O ที่เปลี่ยน implementation ได้ (`FileStorage`, `NotificationPublisher`, `AiClient`, `MailSender`) กับ implementation จริงของมัน |
 | **project-dna** | format ของ layout ที่อ้างถึง — feature-driven, ชื่อโฟลเดอร์ตัวพิมพ์เล็ก, `features/shared/` สำหรับ cross-feature code |

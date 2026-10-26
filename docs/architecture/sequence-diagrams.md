@@ -122,7 +122,8 @@ sequenceDiagram
 
     R->>FE: อัปโหลด proposal (.docx)
     FE->>BE: POST /projects/{id}/files
-    BE->>DB: สร้าง FILE_RECORD (purpose=proposal, uploaded_by=R)
+    BE->>BE: parse mammoth → extracted text<br/>+ chunk ตาม heading/ย่อหน้า + embed ด้วย<br/>multilingual-e5-small (in-process — ADR-0025)<br/>(embedding ไม่นับโควตา AI · ล้มเหลว → 422)
+    BE->>DB: สร้าง FILE_RECORD (purpose=proposal, uploaded_by=R)<br/>+ FILE_CHUNK ทุก chunk (embedding real[] —<br/>cache ผูก file_id · เอกสารตัวเดียวใช้จนจบโปรเจกต์)
     BE-->>FE: อัปโหลดสำเร็จ
 
     R->>FE: ใช้ AI วิเคราะห์ proposal
@@ -163,9 +164,11 @@ sequenceDiagram
     BE->>BE: เช็ก Idempotency-Key — เคยมี → replay response เดิม
     BE->>DB: pre-flight check โควตา (เป็นแค่ hint — ไม่ปฏิเสธ run เดียวที่ล้น)
     BE->>DB: บันทึก AI_THREAD_ENTRY (kind=user, action + prompt)
-    BE->>AI: เริ่ม run — agent loop (ReAct)<br/>tools ที่ AI เรียกได้: read_proposal (ข้อความที่แตกจากไฟล์),<br/>read_draft, read_domain_profiles
+    BE->>AI: เริ่ม run — agent loop (ReAct)<br/>tools ที่ AI เรียกได้: read_proposal (ข้อความที่แตกจากไฟล์),<br/>search_proposal (query RAG บนเอกสาร — ADR-0025),<br/>read_draft, read_domain_profiles
     loop จน AI ให้คำตอบสุดท้าย
-        AI->>BE: ขอเรียก tool
+        AI->>BE: ขอเรียก tool<br/>(คำถามเกี่ยวกับเอกสาร → search_proposal)
+        BE->>DB: FILE_CHUNK WHERE file_id = proposal active
+        BE->>BE: embed query + cosine ฝั่ง app → top-5 chunks<br/>พร้อมตำแหน่ง (chunk_index, heading path)<br/>(RAG ไม่พร้อม → บอก AI ให้ใช้ read_proposal แทน)
         BE->>BE: อ่านข้อมูลตามที่ tool ขอ<br/>(ไม่มี web search · ไม่มี tool ที่แก้ draft ได้)
         BE->>DB: จด AI_THREAD_ENTRY (kind=event, tool + ผลย่อ)
         BE-->>FE: SSE status / tool (ให้ UI โชว์ว่า AI กำลังทำอะไร — consume ไม่บังคับ)
@@ -708,11 +711,11 @@ sequenceDiagram
         BE-->>FE: 413/400 — เกินขีดจำกัด
     else MIME ไม่ใช่ .docx
         BE-->>FE: 400 mime_type_not_allowed
-    else parse เนื้อหาไม่ได้ (เสียหาย/ไม่ใช่เอกสารจริง)
+    else parse เนื้อหาไม่ได้ (เสียหาย/ไม่ใช่เอกสารจริง)<br/>หรือ embed ล้มเหลว (ADR-0025)
         BE-->>FE: 422 proposal_unreadable
     else ผ่าน
         BE->>FS: เก็บไฟล์
-        BE->>DB: สร้าง FILE_RECORD (extracted text เก็บไว้ในตาราง)
+        BE->>DB: สร้าง FILE_RECORD (extracted text เก็บไว้ในตาราง)<br/>+ FILE_CHUNK (chunk → embed in-process — เอกสาร<br/>ตัวเดียวใช้จนจบโปรเจกต์ ไม่ embed ซ้ำ)
         BE-->>FE: สำเร็จ
     end
 
@@ -725,7 +728,7 @@ sequenceDiagram
     alt ไฟล์ถูกใช้เป็น evidence / ผูกกับแผนอยู่
         BE-->>FE: 409 file_in_use — archive เท่านั้น
     else ไม่มีใครใช้
-        BE->>DB: ลบ FILE_RECORD + ไฟล์จริง
+        BE->>DB: ลบ FILE_RECORD + ไฟล์จริง<br/>(FILE_CHUNK CASCADE ตาม — ADR-0025)
     end
     R->>FE: archive ไฟล์ (เก็บร่องรอยไว้)
     FE->>BE: POST /files/{id}/archive
@@ -745,4 +748,4 @@ sequenceDiagram
 | "แจ้งให้แก้ไข → กลับไป draft" | นักวิจัยกลับมาแก้ต่อจาก version in force ได้เลย ไม่ต้อง restore และเลขเวอร์ชันที่ถูกส่งกลับจะไม่ถูกใช้ซ้ำ | หมวด 4.6 |
 | Progress bar ปลายทางเท่านั้น | แตกเป็นสองเรื่อง: การสร้าง tasks อัตโนมัติ + การทำงานของ tasks (flow #6, #12) | หมวด 5.1–5.3 |
 | — | เพิ่ม restore, ลบ/นำกลับ output, archive, export (flow #10, #11, #13, #14) | หมวด 4.8–4.9, หมวด 5.3, หมวด 8 |
-| เรียก AI service ครั้งเดียวต่อ action | ทุก action ทำงานเป็น agent loop (ReAct) บน OpenRouter ด้วย tools 3 ตัว ตอบกลับแบบ SSE (flow #3) | หมวด 6, การตัดสิน AI agent |
+| เรียก AI service ครั้งเดียวต่อ action | ทุก action ทำงานเป็น agent loop (ReAct) บน OpenRouter ด้วย tools 4 ตัว (รวม `search_proposal` — RAG, ADR-0025) ตอบกลับแบบ SSE (flow #3) | หมวด 6, การตัดสิน AI agent |

@@ -208,6 +208,12 @@ Each endpoint's **Error codes** table lists only the codes specific to it.
 | **Admin screens and landing page.** A frontend UX decision, not part of this contract. Suggested: land admin on a users, projects and quota area. | Admin lands on a holding page with no plan access. |
 | **Grounded advice in the chat** ("which repository should I use?"). A backend design track tied to the RAG decision: retrieval over a repository and guidance source. | The chat says plainly that it can't recommend a repository, tool, licence or format yet, and points to the institution's data steward or library. |
 
+RAG over the uploaded proposal is **decided and designed** (ADR-0025): the AI
+can already answer questions about the document through the internal
+`search_proposal` tool — no contract change. What stays deferred is retrieval
+over a repository/guidance source, which is a larger corpus and a separate
+decision.
+
 ### Frontend changes still to make
 
 The contract is ahead of the frontend on these; each endpoint's
