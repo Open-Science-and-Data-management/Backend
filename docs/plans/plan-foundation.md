@@ -55,7 +55,7 @@
   - Deps: 3
 
 ### Phase 4: Domain engine (test-first ทุก task)
-- [ ] **Task 7: `validateDraft`** — กฎหมวด 3.3 ครบ (วันย้อน, contact พอดี 1 + mbox, contributor ลิงก์ซ้ำ, open ไม่มี license, domain_metadata ต่อ profile), error เป็น JSON pointer
+- [x] **Task 7: `validateDraft`** — กฎหมวด 3.3 ครบ (วันย้อน, contact พอดี 1 + mbox, contributor ลิงก์ซ้ำ, open ไม่มี license, domain_metadata ต่อ profile), error เป็น JSON pointer
   - Acceptance: scenario test ครบกฎ; error path ชี้ตำแหน่งถูก
   - Verify: `pnpm test -- tests/unit/domain-engine/validate` (S)
   - Deps: 5
