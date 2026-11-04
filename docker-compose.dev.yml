@@ -9,7 +9,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata_dev:/var/lib/postgresql/data
+      # PG18 image: mount at /var/lib/postgresql (data in subdir) — pg_upgrade-safe
+      - pgdata_dev:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d uni"]
       interval: 2s
