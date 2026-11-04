@@ -542,7 +542,8 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
 
 /** Always resolves: anything unrecognised is treated as generic. */
 export const getDomainProfile = (domain?: string): DomainProfile =>
-  domainProfiles[(domain ?? "generic") as DomainKey];
+  (domainProfiles as Record<string, DomainProfile>)[domain ?? "generic"] ??
+  domainProfiles.generic;
 
 export const validateDomainMetadata = (
   domain: string | undefined,
