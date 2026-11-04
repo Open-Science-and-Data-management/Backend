@@ -36,7 +36,7 @@
   - Verify: `pnpm test -- tests/unit/contracts` (XS–S ต่อไฟล์ schema, รวม M)
   - Files: `shared/contracts/**`, `tests/unit/contracts/` (M)
   - Deps: 1
-- [ ] **Task 4: DB schema 13 ตาราง** — ตาม arc42 §5.3 พร้อม constraint ทั้งหมด + seeds ว่างสำหรับ e2e
+- [x] **Task 4: DB schema 13 ตาราง** — ตาม arc42 §5.3 พร้อม constraint ทั้งหมด + seeds ว่างสำหรับ e2e
   - Acceptance: migration สร้างครบ; integration test ยิง insert ซ้ำ/ขนานแล้ว Postgres ปฏิเสธ (`UNIQUE (dmp_id, number)`, partial unique pending, PK คู่)
   - Verify: `pnpm test -- tests/integration/schema`
   - Files: `src/database/schema/**`, `tests/integration/schema.ts` (L → แตกเป็น 2–3 commit ย่อยใน task เดียว)
