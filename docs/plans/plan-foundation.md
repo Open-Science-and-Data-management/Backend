@@ -71,11 +71,11 @@
   - Acceptance: pending snapshot ไม่ถูกแตะ; minor_edits จดครบ
   - Verify: `pnpm test -- tests/unit/domain-engine/fold` (S)
   - Deps: 8
-- [ ] **Task 11: `carryEdits` + `rebaseWorkingCopy`** — replay ตาม entity id, แยก carried/dropped
+- [x] **Task 11: `carryEdits` + `rebaseWorkingCopy`** — replay ตาม entity id, แยก carried/dropped
   - Acceptance: scenario QS-2 — ทุก fix จด carried หรือ dropped ไม่มีหายเงียบ; rebase เหลือเฉพาะแก้ที่ยังไม่บันทึก/ส่ง
   - Verify: `pnpm test -- tests/unit/domain-engine/carry` (M)
   - Deps: 8
-- [ ] **Task 12: `generateTasks`** — STAGE_PLAN semantics (ADR-0026)
+- [x] **Task 12: `generateTasks`** — STAGE_PLAN semantics (ADR-0026)
   - Acceptance: 5 tasks ต่อ dataset, ข้าม share เมื่อ `access=closed`, priority high/medium/medium/high/low (test จากต้นแบบ FE)
   - Verify: `pnpm test -- tests/unit/domain-engine/task-generator` (S)
   - Deps: 3
