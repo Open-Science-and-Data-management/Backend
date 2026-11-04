@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { DataAccess, DatasetStatus, DomainKeyEnum, YesNoUnknown } from "./enums.js";
 import { distributionSchema } from "./distribution.js";
+import { validateDomainMetadata } from "@shared/domain-profiles/domain-profiles.js";
 
-// Port จาก FE dataset.schema.ts — delta: FE เรียก validateDomainMetadata ใน
-// superRefine; backend ทำผ่าน domain engine (Task 7) เพื่อให้ error มี code
-// และ JSON pointer ตาม error catalog — รูปร่างข้อมูลเหมือนกันทุกฟิลด์
+// Port จาก FE dataset.schema.ts — issues ของ profile ถูก re-raise ใต้
+// `domain_metadata.<field>` ให้ error ชี้ฟิลด์ที่ผิดจริง (ตรง FE)
 
 export const schemaFieldSchema = z.object({
   name: z.string().min(1),
@@ -63,6 +63,17 @@ export const datasetSchema = z.discriminatedUnion("type", [
   }),
   datasetBase.extend({ type: z.literal("publication") }),
   datasetBase.extend({ type: z.literal("other") }),
-]);
+]).superRefine((dataset, ctx) => {
+  const result = validateDomainMetadata(dataset.domain, dataset.domain_metadata);
+  if (result.success) return;
+
+  result.error.issues.forEach((issue) => {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["domain_metadata", ...issue.path],
+      message: issue.message,
+    });
+  });
+});
 
 export type Dataset = z.infer<typeof datasetSchema>;
