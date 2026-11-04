@@ -16,7 +16,7 @@
 ## Task List
 
 ### Phase 1: Tooling + Infra
-- [ ] **Task 1: Scaffold tooling** — pnpm workspace, TS strict, eslint รวม boundary rule, vitest, `config.toml` skeleton, `.env.example`, `docs/` คงเดิม
+- [x] **Task 1: Scaffold tooling** — pnpm workspace, TS strict, eslint รวม boundary rule, vitest, `config.toml` skeleton, `.env.example`, `docs/` คงเดิม
   - Acceptance: `pnpm lint`/`pnpm test` รันเขียว (ว่าง); eslint rule บล็อก import ผิดใน `shared/domain-engine/` (test ด้วย fixture ปลอม)
   - Verify: `pnpm lint && pnpm test`
   - Files: `package.json`, `tsconfig.json`, `eslint.config.*`, `vitest.config.ts`, `config.toml`, `.env.example` (S)

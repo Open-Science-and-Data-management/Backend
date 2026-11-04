@@ -1,0 +1,32 @@
+# ค่า tunable — mirror โครงสร้างโฟลเดอร์ (_appliesTo ระบุ feature) · arc42 §8.7
+# Loader จุดเดียว: src/shared/config/
+
+[app]
+name = "uni-backend"
+debug = false
+
+[auth]                         # src/features/auth/
+_appliesTo = ["src/features/auth/"]
+accessTokenTtlMinutes = 15
+refreshTokenTtlDays = 14
+
+[files]                        # src/features/files/
+_appliesTo = ["src/features/files/"]
+maxFileSizeMb = 25
+storagePath = "data/files"
+
+[files.rag]                    # ADR-0025
+chunkTargetTokens = 450
+chunkOverlapPercent = 10
+topK = 5
+embeddingModel = "intfloat/multilingual-e5-large-instruct"
+
+[ai]                           # src/features/ai/
+_appliesTo = ["src/features/ai/"]
+
+[ai.models]
+default = "placeholder"
+analyze_proposal = "placeholder"
+
+[notifications]                # src/features/notifications/
+_appliesTo = ["src/features/notifications/"]

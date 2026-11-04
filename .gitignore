@@ -1,1 +1,4 @@
-.claude/
+.claude/node_modules/
+data/
+.env
+.eslintcache
