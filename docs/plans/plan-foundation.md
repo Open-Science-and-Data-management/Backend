@@ -67,7 +67,7 @@
   - Acceptance: ตัดสินตรง registry จริง (Task 6)
   - Verify: `pnpm test -- tests/unit/domain-engine/classify` (S)
   - Deps: 6, 8
-- [ ] **Task 10: `foldMinor`** — fold ลง snapshot ของ version in force + จด `minor_edits`
+- [x] **Task 10: `foldMinor`** — fold ลง snapshot ของ version in force + จด `minor_edits`
   - Acceptance: pending snapshot ไม่ถูกแตะ; minor_edits จดครบ
   - Verify: `pnpm test -- tests/unit/domain-engine/fold` (S)
   - Deps: 8
