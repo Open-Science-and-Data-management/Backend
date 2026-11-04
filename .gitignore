@@ -4,3 +4,12 @@ data/
 .eslintcache
 tmp.md
 dist/
+coverage/
+*.log
+logs/
+.DS_Store
+Thumbs.db
+.cache/
+.vite/
+.turbo/
+node_modules/

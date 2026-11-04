@@ -21,14 +21,14 @@
   - Verify: `pnpm lint && pnpm test`
   - Files: `package.json`, `tsconfig.json`, `eslint.config.*`, `vitest.config.ts`, `config.toml`, `.env.example` (S)
   - Deps: none
-- [ ] **Task 2: Dev compose + drizzle wiring** — `docker-compose.dev.yml` (postgres:18-alpine + MailPit), drizzle-kit config, scripts `db:migrate/generate/seed`
+- [x] **Task 2: Dev compose + drizzle wiring** — `docker-compose.dev.yml` (postgres:18-alpine + MailPit), drizzle-kit config, scripts `db:migrate/generate/seed`
   - Acceptance: migrate up/down สำเร็จบน container สะอาด
   - Verify: `docker compose -f docker-compose.dev.yml up -d && pnpm db:migrate`
   - Files: `docker-compose.dev.yml`, `drizzle.config.ts`, `src/database/` (S)
   - Deps: 1 · ⚠️ ต้อง `sudo systemctl enable --now docker` ก่อน
 
 ### Checkpoint: Infra
-- [ ] compose + migrate รันได้จากคำสั่งใน spec; lint boundary ทำงาน
+- [x] compose + migrate รันได้จากคำสั่งใน spec; lint boundary ทำงาน
 
 ### Phase 2: Contracts + Schema
 - [x] **Task 3: Port contracts (zod)** — draft schema (maDMP v3.0), task/checklist/evidence enum, error envelope, SSE events, list envelope — จาก `Frontend/src/schemas/**` + `docs/frontend-api/`
@@ -43,7 +43,7 @@
   - Deps: 2
 
 ### Phase 3: Registry (port จาก FE)
-- [ ] **Task 5: Port domain profiles** — 8 profiles (generic + 7 domains) เข้า `shared/domain-profiles/`
+- [x] **Task 5: Port domain profiles** — 8 profiles (generic + 7 domains) เข้า `shared/domain-profiles/`
   - Acceptance: validate `domain_metadata` ตาม profile จริงผ่าน/ไม่ผ่านถูกต้อง (test จาก FE)
   - Verify: `pnpm test -- tests/unit/domain-engine/profiles`
   - Files: `shared/domain-profiles/**`, `tests/unit/domain-engine/profiles.test.ts` (M)
@@ -63,7 +63,7 @@
   - Acceptance: add/edit/remove/reorder ตรวจจับถูก; entity id เป็นตัวจับคู่เสมอ
   - Verify: `pnpm test -- tests/unit/domain-engine/diff` (S)
   - Deps: 3
-- [ ] **Task 9: `classify`** — major ฟิลด์เดียว = ทั้งชุด major; listPolicies (datasets add/remove = major, contributors/costs = minor)
+- [x] **Task 9: `classify`** — major ฟิลด์เดียว = ทั้งชุด major; listPolicies (datasets/contributors = major, costs = minor — ยึด FE canonical ตาม delta จุด 3, ไม่ใช่ wording เดิม contributors=minor)
   - Acceptance: ตัดสินตรง registry จริง (Task 6)
   - Verify: `pnpm test -- tests/unit/domain-engine/classify` (S)
   - Deps: 6, 8
@@ -81,8 +81,8 @@
   - Deps: 3
 
 ### Checkpoint: Complete (จบ foundation = ครึ่งแรก M1)
-- [ ] Engine 7 functions + registry + contracts + schema มี test คุ้มครบ, `pnpm lint && pnpm test` เขียวทั้ง repo
-- [ ] ทบทาน delta ของ field policy กับ human ก่อนขึ้น accounts
+- [x] Engine 7 functions + registry + contracts + schema มี test คุ้มครบ, `pnpm lint && pnpm test` เขียวทั้ง repo
+- [x] ทบทาน delta ของ field policy กับ human ก่อนขึ้น accounts — ตอบแล้วที่ [field-policy-delta.md](field-policy-delta.md) (ยึด FE canonical ทั้ง 4 จุด ตาม ADR-0027)
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
