@@ -43,13 +43,13 @@ describe("which fields get “Regenerate with AI”", () => {
     ["preservation statement", datasetFieldPolicy["preservation.statement"]],
     ["personal data plan", datasetFieldPolicy.personal_data_plan],
   ])("%s, human-owned prose: a suggestion to accept", (_name, policy) => {
-    expect(policy?.permission).toBe("human");
+    expect(policy.permission).toBe("human");
     expect(regenerateMode(policy)).toBe("polish");
   });
 
   it("indigenous considerations: no AI at all, not even a polish", () => {
     const policy = dmpFieldPolicy.indigenous_considerations;
-    expect(policy?.kind).toBe("prose");
+    expect(policy.kind).toBe("prose");
     expect(regenerateMode(policy)).toBeNull();
     expect(canRegenerate(policy)).toBe(false);
   });

@@ -37,3 +37,5 @@ export type DmpForm = z.infer<typeof dmpSchema>;
 /** Draft ที่ส่งมาแก้ได้บางส่วน (working copy — ADR-0020 ส่งทั้งก้อน) */
 export const dmpDraftSchema = dmpSchema.partial();
 export type DmpDraft = z.infer<typeof dmpDraftSchema>;
+/** รูป input ของ draft — ใช้เป็นพารามิเตอร์ engine (รับ string dates ฯลฯ) */
+export type DmpDraftInput = z.input<typeof dmpDraftSchema>;

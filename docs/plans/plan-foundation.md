@@ -59,7 +59,7 @@
   - Acceptance: scenario test ครบกฎ; error path ชี้ตำแหน่งถูก
   - Verify: `pnpm test -- tests/unit/domain-engine/validate` (S)
   - Deps: 5
-- [ ] **Task 8: `diffDraft`** — เทียบ JSON tree ยึด entity id → `FieldChange[]`
+- [x] **Task 8: `diffDraft`** — เทียบ JSON tree ยึด entity id → `FieldChange[]`
   - Acceptance: add/edit/remove/reorder ตรวจจับถูก; entity id เป็นตัวจับคู่เสมอ
   - Verify: `pnpm test -- tests/unit/domain-engine/diff` (S)
   - Deps: 3
