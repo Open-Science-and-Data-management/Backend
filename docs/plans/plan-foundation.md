@@ -31,7 +31,7 @@
 - [ ] compose + migrate รันได้จากคำสั่งใน spec; lint boundary ทำงาน
 
 ### Phase 2: Contracts + Schema
-- [ ] **Task 3: Port contracts (zod)** — draft schema (maDMP v3.0), task/checklist/evidence enum, error envelope, SSE events, list envelope — จาก `Frontend/src/schemas/**` + `docs/frontend-api/`
+- [x] **Task 3: Port contracts (zod)** — draft schema (maDMP v3.0), task/checklist/evidence enum, error envelope, SSE events, list envelope — จาก `Frontend/src/schemas/**` + `docs/frontend-api/`
   - Acceptance: unit test ที่ port มา (รวมของ FE ที่เทียบได้) เขียว; type ทุก schema export ใช้ได้จาก feature อื่น
   - Verify: `pnpm test -- tests/unit/contracts` (XS–S ต่อไฟล์ schema, รวม M)
   - Files: `shared/contracts/**`, `tests/unit/contracts/` (M)
