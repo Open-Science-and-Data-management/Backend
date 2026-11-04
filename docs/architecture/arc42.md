@@ -94,9 +94,9 @@
 | TC-2 | **Deploy บน VM เดียว (docker-compose)** | ไม่มี kubernetes หรือ cloud แบบ managed — มี Caddy (TLS) + Postgres + app อยู่ใน compose เดียว; ตอน release ต้อง restart สั้น ๆ หนึ่งครั้ง ซึ่งยอมรับได้ |
 | TC-3 | **คอขวดจริงคือ network** (OpenRouter, Postgres) ไม่มีงานหนักทาง CPU | งานส่วนใหญ่คือการรอ API ภายนอกตอบ, SSE connection ที่ค้างเปิดระหว่าง AI run และการ diff/validate JSON — ไม่ใช่การคำนวณหนัก |
 | TC-4 | **ไม่มี monorepo ร่วมกับ frontend** | frontend รัน script generate client ใน repo ของตัวเอง โดยดึง spec จาก runtime endpoint `GET /openapi-json` — ไฟล์ spec ไม่ถูก commit ลง repo นี้ |
-| TC-5 | **4 การตัดสินยังรอ repo Frontend** | domain profiles ข้อมูลจริง, ชุด tasks แรก, รูปร่าง checklist, enum ของ evidence — ต้องดูต้นแบบจาก repo `Frontend` (ซึ่งยังไม่อยู่บนดิสก์) ก่อนจะปิดการตัดสิน (รายละเอียดในหมวด 9) |
+| TC-5 | **การตัดสินจาก repo Frontend ปิดครบแล้ว** | repo `Frontend` อยู่บนดิสก์แล้ว — domain profiles, ชุด tasks แรก (STAGE_PLAN), รูปร่าง checklist, enum ของ evidence ตัดสินครบ (ADR-0022, ADR-0026, ADR-0027) |
 | TC-6 | **AI เป็นบริการภายนอก (OpenRouter)** ผ่าน system key เดียวจาก env | เป็นรายละเอียดภายในของระบบ ไม่ปรากฏใน API contract; ไม่มี web search และไม่มี tool ที่เขียน draft แทนผู้ใช้ |
-| TC-7 | **Secrets ผ่าน env เท่านั้น** | `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL` — ห้ามเก็บใน repo; ค่าตั้งค่าที่ปรับได้อยู่ใน `config.json` |
+| TC-7 | **Secrets ผ่าน env เท่านั้น** | `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL` — ห้ามเก็บใน repo; ค่าตั้งค่าที่ปรับได้อยู่ใน `config.toml` |
 
 ### 2.2 Organizational Constraints
 
@@ -113,12 +113,12 @@
 
 | Convention | Description |
 | --- | --- |
-| CON-1 | จัดโครงสร้างโค้ดแบบ feature-driven ตาม format **project-dna** — ชื่อโฟลเดอร์ตัวพิมพ์เล็กทั้งหมด, โค้ดที่ใช้ร่วมหลาย feature อยู่ที่ `features/shared/` |
-| CON-2 | 1 NestJS module ต่อ 1 feature; `features/shared/domain-engine/` ห้าม import `@nestjs/*` และห้ามแตะ DB/HTTP (บังคับด้วย lint) |
-| CON-3 | zod schema ใน `features/shared/contracts/` เป็น source of truth — ใน `docs/` มีเฉพาะไฟล์ .md ไม่มี artifact ที่ generate แล้ว |
+| CON-1 | จัดโครงสร้างโค้ดแบบ feature-driven ตาม format **project-dna** — ชื่อโฟลเดอร์ตัวพิมพ์เล็กทั้งหมด, โค้ดที่ใช้ร่วมหลาย feature อยู่ที่ `shared/` |
+| CON-2 | 1 NestJS module ต่อ 1 feature; `shared/domain-engine/` ห้าม import `@nestjs/*` และห้ามแตะ DB/HTTP (บังคับด้วย lint) |
+| CON-3 | zod schema ใน `shared/contracts/` เป็น source of truth — ใน `docs/` มีเฉพาะไฟล์ .md ไม่มี artifact ที่ generate แล้ว |
 | CON-4 | วันที่แบบไม่มีเวลา (begin/end ของแผน, start/end ของ task, วันที่ใน domain metadata) เก็บเป็น `YYYY-MM-DD` แยกจาก timestamp เต็ม (`created_at` ฯลฯ) — ห้ามปนกัน |
 | CON-5 | ID ทุก entity เป็น **UUID v7** ที่ backend เป็นผู้สร้าง (mint) เสมอ; ตอน export เติม prefix ด้วย dmp_id เป็น safeguard |
-| CON-6 | การทดสอบ: `tests/unit/` จัดโครงสร้าง mirror กับ `src/`; package manager คือ **pnpm** (node v24, TypeScript strict) |
+| CON-6 | การทดสอบ: `tests/unit/` จัดเป็นโฟลเดอร์รายหน่วย — `tests/unit/<ชื่อหน่วย>` เช่น `tests/unit/domain-engine`, `tests/unit/dmps` (ไม่ mirror ต้นทาง); package manager คือ **pnpm** (node v24, TypeScript strict) |
 
 ---
 
@@ -158,10 +158,10 @@
 | Contract | **zod → OpenAPI → FE generate client** | zod (ไลบรารี schema ของ TypeScript ที่ตรวจข้อมูลตอน runtime ได้ด้วย) เป็น source of truth เดียว; สอดคล้อง TC-4 ที่ไม่มี monorepo |
 | Validation | zod (runtime) + กฎหมวด 3.3 ของ requirement | ปฏิเสธพร้อม path ที่ชี้ลง draft (JSON pointer) ให้ frontend นำไปทำ "คลิกไปแก้" |
 | ID | **UUID v7** mint โดย backend | ตัดปัญหา collision ข้ามแผนของระบบเดิม (seed ids ซ้ำ) + export เติม prefix ด้วย dmp_id |
-| Auth | JWT access อายุสั้น + refresh token ที่ revoke ได้ (bcrypt/argon2id) | เบี่ยงจาก ERD (SHA-256) อย่างมีเจตนา — ERD ระบุเองว่า SHA-256 ไม่ปลอดภัยพอสำหรับรหัสผ่าน (ดู ADR-0006) |
+| Auth | JWT access อายุสั้น + refresh token ที่ revoke ได้ (argon2id — ADR-0029) | เบี่ยงจาก ERD (SHA-256) อย่างมีเจตนา — ERD ระบุเองว่า SHA-256 ไม่ปลอดภัยพอสำหรับรหัสผ่าน (ดู ADR-0006) |
 | AI integration | เขียน ReAct loop เอง บน `AiClient` port | ต้องควบคุม SSE event (`status`/`tool`/`delta`/`proposal`/`done|error` — ADR-0018) ให้ตรง spec เป๊ะ — จึงไม่ใช้ LangChain |
 | Testing | Vitest (unit test-first บน engine) + supertest e2e ครบ 18 flows | preservation คือกฎที่ bug เกิดขึ้นแล้วแพงที่สุด (Quality Goal 1–2) |
-| Config | `config.json` + env เฉพาะ secret | เลือกโมเดล AI ต่อ action ได้ใน config.json; secrets ผ่าน env เท่านั้น (TC-7) |
+| Config | `config.toml` + env เฉพาะ secret | เลือกโมเดล AI ต่อ action ได้ใน config.toml; secrets ผ่าน env เท่านั้น (TC-7) |
 
 **ทำไมไม่ใช่ Go หรือ Python** — ในแง่ raw performance Go ชนะชัดเจน (goroutine กินแค่ ~KB ต่อ connection ค้าง, compile เป็น native binary) แต่ประสิทธิภาพของภาษาไม่ใช่ตัวตัดสินที่ scale นี้ — ความเสี่ยงจริงของระบบคือความถูกต้องของ diff/version engine (การจำแนก minor/major, carry/drop edits, replay ตาม entity id) ภาษาที่ช่วยให้ logic ชุดนี้ถูกต้องและดูแลรักษาได้ง่าย จึงดีกว่าภาษาที่เร็วกว่า
 
@@ -196,7 +196,7 @@
 | Preservation | constraint ระดับฐานข้อมูล (`UNIQUE (dmp_id, number)`, partial unique pending, PK คู่ `(project_id, user_id)`), `draft_revision` แบบ optimistic concurrency (ชนกัน → `409`), กฎ archive/cancel/reopen, `dropped_minor_edits` จดแทนการหายเงียบ ๆ |
 | ความถูกต้องของ engine | domain engine เป็น pure functions (ฟังก์ชันที่ให้ผลลัพธ์เดิมเสมอสำหรับ input เดิม และไม่แตะโลกภายนอก) — unit test-first; e2e supertest ต่อ Postgres จริง ครบ 18 flows ของ sequence diagrams |
 | เรียบง่าย / auditability | transaction Drizzle เดียวใน service ผู้เรียก, in-process event bus ซ่อนอยู่ใน adapter ของ `NotificationPublisher` เท่านั้น, deploy = restart สั้น ๆ |
-| Contract consistency | zod schemas กลาง (`features/shared/contracts/`), field policy และ domain profiles เป็น registry ที่ expose ผ่าน `GET /field-policy` / `GET /domain-profiles` — frontend ใช้ชุดเดียวกับที่ backend ใช้ตัดสิน |
+| Contract consistency | zod schemas กลาง (`shared/contracts/`), field policy และ domain profiles เป็น registry ที่ expose ผ่าน `GET /field-policy` / `GET /domain-profiles` — frontend ใช้ชุดเดียวกับที่ backend ใช้ตัดสิน |
 
 ---
 
@@ -229,21 +229,27 @@ src/
 │   ├── notifications/        # notification rows — polling (ไม่มี push, ADR-0013)
 │   ├── ai/                   # ReAct loop, thread, token budget, idempotency
 │   ├── exports/              # madmp-v3 / rda-v1.3 projections — deferred (ADR-0019)
-│   └── shared/
-│       ├── domain-engine/    # pure functions — ห้าม import @nestjs/*
-│       ├── domain-profiles/  # DOMAIN_PROFILE registry + field-policy (path-based)
-│       ├── contracts/        # zod schemas ข้าม feature (draft schema, error envelope, SSE events)
-│       ├── ports/            # FileStorage, NotificationPublisher, AiClient, MailSender
-│       ├── adapters/         # DiskStorage, SsePublisher + InProcessEventBus,
-│       │                     #   OpenRouterClient, SmtpMailer
-│       └── config/           # config loader (จุดเดียวที่อ่าน config.json)
+├── shared/
+│   ├── domain-engine/        # pure functions — ห้าม import @nestjs/*
+│   ├── domain-profiles/      # DOMAIN_PROFILE registry + field-policy (path-based)
+│   ├── contracts/            # zod schemas ข้าม feature (draft schema, error envelope, SSE events)
+│   ├── ports/                # FileStorage, NotificationPublisher, AiClient, MailSender
+│   ├── adapters/             # DiskStorage, SsePublisher + InProcessEventBus,
+│   │                         #   OpenRouterClient, SmtpMailer
+│   └── config/               # config loader (จุดเดียวที่อ่าน config.toml)
 ├── database/                 # drizzle schema + migrations (SQL files) + seeds
-tests/                        # unit (mirror src/) / integration / e2e (18 flows) / fixtures
-config.json                   # ค่า tunable — mirror โครงสร้างโฟลเดอร์
+tests/
+├── unit/                     # โฟลเดอร์รายหน่วย ไม่ mirror ต้นทาง
+│   ├── domain-engine/        # test-first บน engine (diff/classify/fold/carry/rebase/validate)
+│   ├── dmps/ tasks/ auth/ …  # unit ราย feature ตามชื่อหน่วย
+├── integration/              # Postgres, disk, mock OpenRouter, SMTP
+├── e2e/                      # supertest ต่อ Postgres จริง ครบ 18 flows
+└── fixtures/                 # แผนตัวอย่าง, draft JSON, .docx
+config.toml                   # ค่า tunable — mirror โครงสร้างโฟลเดอร์
 .env / .env.example           # credentials เท่านั้น
 ```
 
-กฎที่บังคับด้วย lint: `features/shared/domain-engine/` ห้าม import `@nestjs/*` และห้ามแตะ DB/HTTP (CON-2)
+กฎที่บังคับด้วย lint: `shared/domain-engine/` ห้าม import `@nestjs/*` และห้ามแตะ DB/HTTP (CON-2)
 
 - NestJS module 1 ตัวต่อ 1 feature
 - ชื่อโฟลเดอร์ตัวพิมพ์เล็กทั้งหมด
@@ -319,7 +325,7 @@ controller (HTTP/SSE, บาง)
 | ตาราง | constraint สำคัญ |
 | --- | --- |
 | `users` | `email` unique แบบ normalize (lowercase + trim), `username` lowercase, `ai_token_limit/used` + `quota_resets_at` (reset รายเดือน — ADR-0023) |
-| `credentials` | PK `username`, FK → users, salted hash **bcrypt/argon2id** (เบี่ยงจาก ERD ตาม requirement หมวด 2.3) |
+| `credentials` | PK `username`, FK → users, salted hash **argon2id** (เบี่ยงจาก ERD ตาม requirement หมวด 2.3 — ADR-0029) |
 | `refresh_tokens` | FK → users, revoke ได้ + **rotation + token-family reuse detection** (ADR-0016) — รองรับการปิดสิทธิ์บัญชีที่สถาบันมอบ |
 | `projects` | FK `proposal_file_id` → file_records (nullable — ตั้งโดย analyze-proposal, ADR-0024) |
 | `project_members` | PK คู่ `(project_id, user_id)` — enforce หมวด 3.2 ที่ระดับฐานข้อมูล |
@@ -327,7 +333,7 @@ controller (HTTP/SSE, บาง)
 | `dmp_versions` | `UNIQUE (dmp_id, number)` + **partial unique `UNIQUE (dmp_id) WHERE status='pending'`** — บังคับ requirement หมวด 4.3/4.4 โดย Postgres เอง; snapshot/changes/minor_edits/carried/dropped เก็บเป็น JSONB |
 | `tasks` | FK dmps; `progress_percent` คำนวณจาก checklist เสมอ; **ไม่มี `file_id`** — evidence เก็บ ref (ADR-0022) |
 | `file_records` | purpose/docx-extracted-text (เก็บ text ไว้ในตาราง ไม่ใช่ใน metadata — เพื่อให้ agent อ่านของสำเร็จรูป), `archived_at` (ไฟล์ evidence archive เท่านั้น — ADR-0022/0024) |
-| `file_chunks` | FK → file_records **ON DELETE CASCADE**, `chunk_index`, `content`, `heading_path`, `embedding real[]` (384 dims — multilingual-e5-small), `embedding_model` (ไม่ตรง config ปัจจุบัน → re-embed ทั้งไฟล์), index บน `file_id` — query กรอง file_id ก่อนแล้ว cosine ฝั่ง app (~1 ms ต่อเอกสาร), ไม่มี pgvector/ANN (ADR-0025) |
+| `file_chunks` | FK → file_records **ON DELETE CASCADE**, `chunk_index`, `content`, `heading_path`, `embedding real[]` (1024 dims — multilingual-e5-large-instruct, ADR-0028), `embedding_model` (ไม่ตรง config ปัจจุบัน → re-embed ทั้งไฟล์), index บน `file_id` — query กรอง file_id ก่อนแล้ว cosine ฝั่ง app (~1 ms ต่อเอกสาร), ไม่มี pgvector/ANN (ADR-0025) |
 | `notifications` | type ตาม requirement หมวด 7, read_at nullable — ลบได้ (UX ไม่ใช่ record, ADR-0024) |
 | `ai_thread_entries` | kind user/event/assistant, **scope = dmp_id nullable \| `unscoped`** (ADR-0023), token_count, decision accepted/rejected/stale |
 | `reopen_offers` | ข้อเสนอเปิดคืน task หลัง output กลับมา — จดว่าเสนออะไรแล้ว + user accept/dismiss (ADR-0022) |
@@ -466,7 +472,7 @@ sequenceDiagram
 
 ### 6.3 Scenario: AI action (ReAct loop, SSE — flow 3)
 
-โควตาเป็น pre-flight hint (ไม่ปฏิเสธ run เดียวที่ล้น) + บังคับ `Idempotency-Key` (replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ — ADR-0023) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 4 ตัว (`read_proposal` อ่านจาก extracted text, `search_proposal` query RAG บนเอกสาร, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน — ADR-0025) สตรีม SSE เป็น `status`/`tool` (progress, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal — ADR-0018) ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ — นับ output + uncached input (cached นับ 10%) คิดทุก call รวมที่ fail/abort **RAG (ADR-0025)**: proposal active ตัวเดียวต่อโปรเจกต์คือ corpus ทั้งหมด — ตอน upload ระบบ parse .docx ด้วย mammoth (in-process) เก็บ extracted text ใน `file_records` แล้ว chunk ตาม heading/ย่อหน้า (~400–500 token วัดด้วย tokenizer ของโมเดล, overlap ~10% — ค่า tunable ผ่าน config) แล้ว embed ด้วย multilingual-e5-small (in-process) ลงตาราง `file_chunks` (`real[]` + `chunk_index` + `heading_path` + `embedding_model`) — embedding ไม่นับโควตา AI และถ้าล้มเหลว upload fail `422` เหมือน parse ไม่ได้ เวกเตอร์ cache ผูกกับ `file_id` — เอกสารตัวเดียวใช้จนจบโปรเจกต์ จึง embed ครั้งเดียว; ไฟล์เก่าก่อน feature นี้ backfill แบบ lazy ครั้งแรกที่ถูกเรียกใช้; chunks CASCADE ตาม `file_records` (supersede/ลบไฟล์ = ระเบิดตาม — retrieval ชี้ proposal active เท่านั้น); chunks ที่ embed ด้วยรุ่นโมเดลไม่ตรง config ปัจจุบัน re-embed ทั้งไฟล์ครั้งเดียว ตอน query: `search_proposal` กรอง `WHERE file_id` ก่อน (candidate set ผูกกับเอกสารเดียว ไม่ว่าระบบจะมีกี่โปรเจกต์) แล้ว cosine ฝั่ง app (~1 ms ที่ ~200–1,000 chunks — brute force ชนะ ANN ที่ N นี้ และแม่น 100%) คืน top-k = 5 chunks พร้อมตำแหน่ง; ถ้า RAG ยังไม่พร้อม tool บอก agent ให้ fallback ไป `read_proposal` — ไม่ error ทั้ง run wire format ของ OpenRouter ถูกแปลภายใน `AiClient` adapter — ห้ามรั่วถึง FE
+โควตาเป็น pre-flight hint (ไม่ปฏิเสธ run เดียวที่ล้น) + บังคับ `Idempotency-Key` (replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ — ADR-0023) → persist `ai_thread_entries` (kind=user) → ReAct loop เรียก tools 4 ตัว (`read_proposal` อ่านจาก extracted text, `search_proposal` query RAG บนเอกสาร, `read_draft`, `read_domain_profiles` — ไม่มี web search และไม่มี tool เขียน draft แทน — ADR-0025) สตรีม SSE เป็น `status`/`tool` (progress, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal — ADR-0018) ทุกผลลัพธ์เป็นข้อเสนอที่ผู้ใช้แก้ไขต่อได้ทั้งหมด ไม่มีอะไรเขียนทับ draft อัตโนมัติ reconcile token จริงตอนจบ — นับ output + uncached input (cached นับ 10%) คิดทุก call รวมที่ fail/abort **RAG (ADR-0025)**: proposal active ตัวเดียวต่อโปรเจกต์คือ corpus ทั้งหมด — ตอน upload ระบบ parse .docx ด้วย mammoth (in-process) เก็บ extracted text ใน `file_records` แล้ว chunk ตาม heading/ย่อหน้า (~400–500 token วัดด้วย tokenizer ของโมเดล, overlap ~10% — ค่า tunable ผ่าน config) แล้ว embed ด้วย multilingual-e5-large-instruct (in-process — ADR-0028) ลงตาราง `file_chunks` (`real[]` + `chunk_index` + `heading_path` + `embedding_model`) — embedding ไม่นับโควตา AI และถ้าล้มเหลว upload fail `422` เหมือน parse ไม่ได้ เวกเตอร์ cache ผูกกับ `file_id` — เอกสารตัวเดียวใช้จนจบโปรเจกต์ จึง embed ครั้งเดียว; ไฟล์เก่าก่อน feature นี้ backfill แบบ lazy ครั้งแรกที่ถูกเรียกใช้; chunks CASCADE ตาม `file_records` (supersede/ลบไฟล์ = ระเบิดตาม — retrieval ชี้ proposal active เท่านั้น); chunks ที่ embed ด้วยรุ่นโมเดลไม่ตรง config ปัจจุบัน re-embed ทั้งไฟล์ครั้งเดียว ตอน query: `search_proposal` กรอง `WHERE file_id` ก่อน (candidate set ผูกกับเอกสารเดียว ไม่ว่าระบบจะมีกี่โปรเจกต์) แล้ว cosine ฝั่ง app (~1 ms ที่ ~200–1,000 chunks — brute force ชนะ ANN ที่ N นี้ และแม่น 100%) คืน top-k = 5 chunks พร้อมตำแหน่ง; ถ้า RAG ยังไม่พร้อม tool บอก agent ให้ fallback ไป `read_proposal` — ไม่ error ทั้ง run wire format ของ OpenRouter ถูกแปลภายใน `AiClient` adapter — ห้ามรั่วถึง FE
 
 ```mermaid
 sequenceDiagram
@@ -483,7 +489,7 @@ sequenceDiagram
     FE->>BE: POST /projects/{id}/files
     BE->>BE: parse mammoth (in-process) → extracted text
     BE->>BE: chunk ตาม heading/ย่อหน้า<br/>(~400–500 token, overlap ~10% — tunable)
-    BE->>BE: embed ทุก chunk ด้วย multilingual-e5-small<br/>(in-process · ไม่นับโควตา AI ·<br/>ล้มเหลว → 422 เหมือน parse ไม่ได้)
+    BE->>BE: embed ทุก chunk ด้วย multilingual-e5-large-instruct<br/>(in-process · ไม่นับโควตา AI ·<br/>ล้มเหลว → 422 เหมือน parse ไม่ได้)
     BE->>DB: file_records (extracted text)<br/>+ file_chunks (chunk_index, heading_path,<br/>embedding_model, embedding real[])
     BE-->>FE: สำเร็จ — เวกเตอร์ cache ผูก file_id<br/>(เอกสารตัวเดียวใช้จนจบโปรเจกต์ ไม่ embed ซ้ำ)
     end
@@ -557,7 +563,7 @@ sequenceDiagram
 แบบผสม — ตาราง relational สำหรับ entity ที่มี lifecycle จริง, JSONB สำหรับ working draft (รายละเอียดตารางและเหตุผลเต็มในหมวด 5.3 / ADR-0003) รูปร่าง draft ยืนยันแล้วว่าตรง **maDMP v3.0** (JSON schema จริงอยู่ใน `uni/maDMP-Standard/`):
 
 ```jsonc
-// Working draft (dmps.draft JSONB) — zod schema นิยามใน features/shared/contracts/
+// Working draft (dmps.draft JSONB) — zod schema นิยามใน shared/contracts/
 {
   "schema_version": "3.0",
   "dates": { "begin": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
@@ -585,7 +591,7 @@ sequenceDiagram
 
 - **Authentication:** JWT access token อายุสั้น (15 นาที) ส่งผ่าน header + refresh token เก็บใน `refresh_tokens` (revoke ได้ — การปิดบัญชีจะ revoke ทั้งหมด)
 - **Token rotation (ADR-0016):** refresh token ส่งผ่าน **httpOnly cookie** แบบ rotating TTL 14 วัน พร้อม token-family reuse detection (ใช้ refresh เก่าซ้ำ → revoke ทั้ง token family)
-- **Password:** salted hash ด้วย **bcrypt/argon2id** (เบี่ยงจาก ERD อย่างมีเจตนา — ดู ADR-0006)
+- **Password:** salted hash ด้วย **argon2id** (เบี่ยงจาก ERD อย่างมีเจตนา — ดู ADR-0006, ADR-0029)
 - **Authorization:** ตาม role — sign-up เองได้เฉพาะ researcher; admin provisioning สร้างบัญชี committee/chief/admin ด้วย username + email + **รหัสผ่านชั่วคราว** (แสดงครั้งเดียว บังคับเปลี่ยนตอน login แรก — ไม่พึ่ง email ในการเริ่มระบบ)
 - **Audit:** การระบุผู้กระทำอ่านจาก JWT subject ทุก mutation
 - **Secrets:** env เท่านั้น (TC-7); access token ส่งผ่าน header เท่านั้น — ไม่หลุดเข้า access log (SSE ใช้ fetch + ReadableStream)
@@ -656,45 +662,50 @@ Envelope เดียวทั้ง API สไตล์ Stripe (ADR-0014):
 
 - **Notification เป็น polling ไม่มี push (ADR-0013):** `GET /notifications` ทุก ~60 วิ + ตอน refocus — row สร้างใน transaction ของเหตุการณ์; ไม่มี `GET /notifications/stream` แล้ว; คง `NotificationPublisher` port ไว้เผื่อสลับ push ภายหลัง (adapter `InProcessEventBus` คง publish หลัง commit สำเร็จเท่านั้น)
 - AI streaming ใช้ SSE — event shapes (`status`/`tool` ระหว่างทาง → `delta` ข้อความ → `proposal` ผล structured → `done|error` ปิด — ADR-0018) นิยามใน `contracts/`; event ที่ client ไม่รู้จักต้องเมิน (กฎ SSE) เพื่อ forward compatibility; wire format ของ OpenRouter (OpenAI-compatible) ถูกแปลภายใน `AiClient` adapter เท่านั้น — ห้ามรั่วถึง FE
-- **RAG บนเอกสาร (ADR-0025):** proposal active ตัวเดียวต่อโปรเจกต์คือ corpus — ตอน upload ระบบ parse → chunk → embed ด้วย multilingual-e5-small **in-process** (ไม่มี background job — convention เดิม) ลง `file_chunks` (`real[]` + `embedding_model`, CASCADE ตามไฟล์); retrieval กรอง `file_id` ก่อนแล้ว cosine ฝั่ง app (brute force — แม่น 100% และ ~1 ms ที่ขนาดเอกสารเดียว, ไม่มี pgvector/ANN/vector DB) เวกเตอร์ embed ครั้งเดียวต่อไฟล์ (cache ตลอดโปรเจกต์ — เอกสารเดียวใช้จนจบ), ไฟล์เก่า backfill lazy, รุ่นโมเดลไม่ตรง config → re-embed ทั้งไฟล์; embedding **ไม่นับโควตา AI** — เป็น infra เหมือน parse; ล้มเหลวตอน upload → `422` เหมือน parse ไม่ได้; tool `search_proposal` คืน top-5 chunks พร้อมตำแหน่ง และถ้า RAG ไม่พร้อมจะบอก agent ให้ fallback `read_proposal` แทน (tool ภายใน — FE contract ไม่เปลี่ยน)
+- **RAG บนเอกสาร (ADR-0025):** proposal active ตัวเดียวต่อโปรเจกต์คือ corpus — ตอน upload ระบบ parse → chunk → embed ด้วย multilingual-e5-large-instruct **in-process** (ไม่มี background job — convention เดิม) ลง `file_chunks` (`real[]` + `embedding_model`, CASCADE ตามไฟล์); retrieval กรอง `file_id` ก่อนแล้ว cosine ฝั่ง app (brute force — แม่น 100% และ ~1 ms ที่ขนาดเอกสารเดียว, ไม่มี pgvector/ANN/vector DB) เวกเตอร์ embed ครั้งเดียวต่อไฟล์ (cache ตลอดโปรเจกต์ — เอกสารเดียวใช้จนจบ), ไฟล์เก่า backfill lazy, รุ่นโมเดลไม่ตรง config → re-embed ทั้งไฟล์; embedding **ไม่นับโควตา AI** — เป็น infra เหมือน parse; ล้มเหลวตอน upload → `422` เหมือน parse ไม่ได้; tool `search_proposal` คืน top-5 chunks พร้อมตำแหน่ง และถ้า RAG ไม่พร้อมจะบอก agent ให้ fallback `read_proposal` แทน (tool ภายใน — FE contract ไม่เปลี่ยน)
 - frontend ใช้ **fetch + ReadableStream** ทุกจุด — `EventSource` แนบ Authorization header ไม่ได้ และ AI action เป็น POST ซึ่ง EventSource ใช้ไม่ได้อยู่แล้ว (ADR-0008)
 
 ### 8.7 Configuration
 
-`config.json` mirror โครงสร้างโฟลเดอร์ (`_appliesTo` ระบุว่าค่าไหนใช้กับ feature ไหน) — อ่านผ่าน loader ที่ `features/shared/config` ซึ่งเป็นจุดเดียวที่อ่านไฟล์นี้:
+`config.toml` mirror โครงสร้างโฟลเดอร์ (`_appliesTo` ระบุว่าค่าไหนใช้กับ feature ไหน) — อ่านผ่าน loader ที่ `shared/config` ซึ่งเป็นจุดเดียวที่อ่านไฟล์นี้:
 
-```jsonc
-{
-  "app": { "name": "uni-backend", "debug": false },
-  "auth": {
-    "_appliesTo": ["src/features/auth/"],
-    "accessTokenTtlMinutes": 15,
-    "refreshTokenTtlDays": 14,
-  },
-  "files": {
-    "_appliesTo": ["src/features/files/"],
-    "maxFileSizeMb": 25,
-    "storagePath": "data/files",
-    "rag": {                      // ADR-0025
-      "chunkTargetTokens": 450,   // ตัดตาม heading/ย่อหน้า แล้ว pack ถึงขนาดเป้า
-      "chunkOverlapPercent": 10,
-      "topK": 5,
-      "embeddingModel": "intfloat/multilingual-e5-small", // 384 dims — เปลี่ยน → re-embed ทั้งไฟล์อัตโนมัติ (embedding_model column)
-    },
-  },
-  "ai": {
-    "_appliesTo": ["src/features/ai/"],
-    "models": { "default": "…", "analyze_proposal": "…" },
-  },
-  "notifications": { "_appliesTo": ["src/features/notifications/"] },
-}
+```toml
+[app]
+name = "uni-backend"
+debug = false
+
+[auth]                         # src/features/auth/
+_appliesTo = ["src/features/auth/"]
+accessTokenTtlMinutes = 15
+refreshTokenTtlDays = 14
+
+[files]                        # src/features/files/
+_appliesTo = ["src/features/files/"]
+maxFileSizeMb = 25
+storagePath = "data/files"
+
+[files.rag]                    # ADR-0025
+chunkTargetTokens = 450        # ตัดตาม heading/ย่อหน้า แล้ว pack ถึงขนาดเป้า
+chunkOverlapPercent = 10
+topK = 5
+embeddingModel = "intfloat/multilingual-e5-large-instruct" # 1024 dims (ADR-0028) — เปลี่ยน → re-embed ทั้งไฟล์อัตโนมัติ (embedding_model column)
+
+[ai]                           # src/features/ai/
+_appliesTo = ["src/features/ai/"]
+
+[ai.models]
+default = "…"
+analyze_proposal = "…"
+
+[notifications]                # src/features/notifications/
+_appliesTo = ["src/features/notifications/"]
 ```
 
 `.env` — เก็บเฉพาะ credentials: `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL` (ดู `.env.example`)
 
 ### 8.8 Testability
 
-- `tests/unit/` mirror โครงสร้าง `src/` — unit test-first บน domain engine (pure functions)
+- `tests/unit/` โฟลเดอร์รายหน่วย (`tests/unit/domain-engine`, `tests/unit/dmps` — ไม่ mirror ต้นทาง) — unit test-first บน domain engine (pure functions)
 - `tests/integration/` — Postgres, disk, OpenRouter (mock server), SMTP
 - `tests/e2e/` — supertest ต่อ Postgres จริง ครบ 18 flows — ทุกกฎ preservation มี e2e test คอยคุ้มกัน
 - `tests/fixtures/` — แผนตัวอย่าง, draft JSON, .docx สำหรับทดสอบ
@@ -712,14 +723,9 @@ Envelope เดียวทั้ง API สไตล์ Stripe (ADR-0014):
 
 ## 9. Architecture Decisions
 
-ADR ทั้งหมดเก็บเป็นไฟล์แยกใน [`docs/decisions/`](../decisions/) (ADR = Architecture Decision Record คือบันทึกการตัดสินใจทางสถาปัตยกรรมพร้อมเหตุผล) — ADR-0001–0012 เป็นการตัดสินชุดออกแบบแรก (2026-10-19), ADR-0013–0024 เป็นผลของการเทียบกับ frontend contract และ grilling session (2026-10-26): การตัดสิน cross-cutting (error/pagination/token/path), AI streaming events, notification polling, export deferred, โมเดล draft/revision/finalize, ไฟล์-tasks-AI contract, และ read models + endpoints ที่เติม
+ADR ทั้งหมดเก็บเป็นไฟล์แยกใน [`docs/decisions/`](../decisions/) (ADR = Architecture Decision Record คือบันทึกการตัดสินใจทางสถาปัตยกรรมพร้อมเหตุผล) — ADR-0001–0012 เป็นการตัดสินชุดออกแบบแรก (2026-10-19), ADR-0013–0024 เป็นผลของการเทียบกับ frontend contract และ grilling session (2026-10-26): การตัดสิน cross-cutting (error/pagination/token/path), AI streaming events, notification polling, export deferred, โมเดล draft/revision/finalize, ไฟล์-tasks-AI contract, และ read models + endpoints ที่เติม; ADR-0025 มาจาก RAG grilling, ADR-0026–0029 มาจาก grilling session การวางแผน dev (2026-11-04): ปิด TC-5 จาก repo Frontend, field policy canonical, embedding runtime/โมเดล, argon2id
 
-**เลื่อนการตัดสิน (รอข้อมูลจาก repo Frontend — TC-5):** ตัดสินไปแล้ว 2 ข้อจาก frontend contract บนดิสก์ — enum evidence = `none|file|url|rdm_deposit` (ADR-0022) และรูปร่าง checklist ตาม contract (ADR-0022) — คงเหลือ 2 ข้อ:
-
-| เรื่องที่รอ | ต้องดูจากไฟล์ | คำถามที่รอคำตอบ |
-| --- | --- | --- |
-| domain profiles ข้อมูลจริง | `src/schemas/dataset/domain-profiles.ts` | ชื่อ field ภายในของ 8 profiles (generic + 7 domains) — port เข้า `features/shared/domain-profiles/` ให้ BE/FE validate ชุดเดียวกัน |
-| ชุด tasks แรก | (ดูต้นแบบการสร้าง tasks ใน repo) | ชุด tasks แรกเมื่อแผนมีผลมีอะไรบ้าง — ต่อ dataset ตาม lifecycle stage หรือ template เดียวต่อแผน |
+**ปิดครบแล้ว (2026-11-04 — repo `Frontend` อยู่บนดิสก์):** ทั้ง 4 ข้อตัดสินแล้ว — enum evidence + checklist (ADR-0022 จาก frontend contract), domain profiles ข้อมูลจริง + ชุด tasks แรก (STAGE_PLAN) + กฎ evidence mode-conditional (ADR-0026), field policy canonical จาก `src/config/field-policy.ts` (ADR-0027)
 
 ---
 
@@ -769,7 +775,7 @@ mindmap
 | ID | Risk | Impact | Probability | Mitigation |
 | --- | --- | --- | --- | --- |
 | R-1 | Email verification ยังไม่ทำ — ใครก็สมัครด้วย email ใดก็ได้ | Medium | High (เกิดทันที) | จดเป็นช่องที่รับรู้และยอมรับไว้ — ทำในรอบถัดไปเมื่อสถาบันพร้อม |
-| R-2 | 2 การตัดสินรอ repo Frontend (domain profiles ข้อมูลจริง, ชุด tasks แรก) — เดิม 4 ข้อ ตัดสินไปแล้ว 2 ผ่าน frontend contract (checklist, evidence enum — ADR-0022) | Medium | Certain จนกว่าจะได้ repo | ครอบค่าไว้ก่อนอย่างครบถ้วน — ตัดสินต่อเมื่อ clone repo เป็น read-only reference |
+| R-2 | ~~2 การตัดสินรอ repo Frontend~~ **ปิดแล้ว (2026-11-04)** — repo อยู่บนดิสก์ ตัดสินครบทั้ง 4 ข้อ | — | — | domain profiles + STAGE_PLAN + evidence mode-conditional (ADR-0026), field policy (ADR-0027) |
 | R-3 | Release = restart — downtime สั้น ๆ ทุกครั้ง | Low | ทุก release | ยอมรับได้ที่ scale นี้ (TC-2) — ถ้าไม่พอจึงพิจารณา topology ใหม่ |
 | R-4 | ความเร็ว raw ต่ำกว่า Go | Low | Low | workload ไม่มีงานหนักทาง CPU — ถ้ากลายเป็นคอขวด จุดแก้คือ topology ไม่ใช่เปลี่ยนภาษา |
 | R-5 | Backup เป็น manual process ของ ops | Medium | — | จดใน runbook; pg_dump ตามรอบ + snapshot volume |
@@ -814,7 +820,7 @@ mindmap
 | **ReAct loop** | agent loop ที่โมเดลตัดสินใจเรียก tools เองหลายรอบก่อนคืนคำตอบ — tools 4 ตัว: `read_proposal`, `search_proposal` (RAG — ADR-0025), `read_draft`, `read_domain_profiles` |
 | **token budget** | โควตา AI ต่อผู้ใช้ (`ai_token_limit` / `ai_token_used` + `quota_resets_at` reset รายเดือน) — นับ output + uncached input, cached input ลดเหลือ 10%, คิดทุก call รวมที่ fail/abort, pre-flight เป็นแค่ hint (ADR-0023) |
 | **port / adapter** | interface ของ I/O ที่เปลี่ยน implementation ได้ (`FileStorage`, `NotificationPublisher`, `AiClient`, `MailSender`) กับ implementation จริงของมัน |
-| **project-dna** | format ของ layout ที่อ้างถึง — feature-driven, ชื่อโฟลเดอร์ตัวพิมพ์เล็ก, `features/shared/` สำหรับ cross-feature code |
+| **project-dna** | format ของ layout ที่อ้างถึง — feature-driven, ชื่อโฟลเดอร์ตัวพิมพ์เล็ก, `shared/` สำหรับ cross-feature code |
 
 ---
 
@@ -823,4 +829,6 @@ mindmap
 - ความต้องการเชิงพฤติกรรมอยู่ที่ `docs/architecture/requirement.md`
 - 18 flows อยู่ที่ `docs/architecture/sequence-diagrams.md`
 - แผนภาพ C4 ทั้งหมดอยู่ที่ `docs/architecture/c4/`
+- ลำดับการพัฒนาและความสังวัติระหว่าง feature อยู่ที่ [`dev-dependencies.md`](dev-dependencies.md)
+- แผนการ dev (milestones + slices) อยู่ที่ [`dev-plan.md`](dev-plan.md); report โมเดล embedding ภาษาไทยอยู่ที่ [`../research/thai-embedding-models.md`](../research/thai-embedding-models.md)
 - เมื่อแก้สถาปัตยกรรม ให้แก้เอกสารนี้ก่อน แล้วอัปเดตแผนภาพใน c4/ ตาม

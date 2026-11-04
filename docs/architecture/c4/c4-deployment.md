@@ -58,7 +58,7 @@ C4Deployment
 | Migration | เป็น SQL files (drizzle-kit) commit ลง repo — ดูย้อน/สั่งซ้ำได้ |
 | Backup | `pg_dump` ตามรอบ + snapshot volume ไฟล์ — เป็นหน้าที่ ops ของสถาบัน (มี runbook) |
 | Release | restart สั้น ๆ ครั้งเดียว — ยอมรับได้ที่ scale นี้ |
-| Config | แยกสองที่: `config.json` (ค่า tunable) + `.env` (credentials เท่านั้น: `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL`) |
+| Config | แยกสองที่: `config.toml` (ค่า tunable) + `.env` (credentials เท่านั้น: `DATABASE_URL`, `JWT_SECRET`, `OPENROUTER_KEY`, `SMTP_URL`) |
 | TLS | Caddy จัดการให้หมด — app ไม่เห็น TLS เลย |
 
 ## ขอบเขตที่ตัดสินไว้แล้ว

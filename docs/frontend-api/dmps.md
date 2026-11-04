@@ -18,7 +18,7 @@ approver.
 | [Approve a version](#approve-a-version) | `POST /v1/dmps/:dmp_id/versions/:number/approve` |
 | [Reject a version](#reject-a-version) | `POST /v1/dmps/:dmp_id/versions/:number/reject` |
 | [Create a plan](#create-a-plan) | `POST /v1/dmps` |
-| [Update a draft](#update-a-draft) | `PATCH /v1/dmps/:dmp_id/draft` |
+| [Update a draft](#update-a-draft) | `PUT /v1/dmps/:dmp_id/draft` |
 | [Discard draft edits](#discard-draft-edits) | `POST /v1/dmps/:dmp_id/draft/discard` |
 | [Restore a version](#restore-a-version) | `POST /v1/dmps/:dmp_id/draft/restore` |
 | [Submit for approval](#submit-for-approval) | `POST /v1/dmps/:dmp_id/submit` |
@@ -843,22 +843,22 @@ empty draft, `draft_revision: 0`.
 
 ### Update a draft
 
-`PATCH /v1/dmps/:dmp_id/draft`
+`PUT /v1/dmps/:dmp_id/draft`
 
-Saves changes to the working draft. The editor autosaves field by field, so
-this is the endpoint the app calls most.
+Saves the working draft **as a whole** (ADR-0020 — whole-object replace, not a
+merge patch). The editor autosaves by sending the entire draft, so this is the
+endpoint the app calls most.
 
-- **Partial update.** The body is a JSON merge patch
-  ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)) over the draft. Lists
-  (`dataset`, `contributor`, `cost`) are sent whole, each entry with its id,
-  so adding, editing, reordering and removing an output, contributor or cost
-  item all go through this one endpoint.
+- **Whole-object update.** The body is the complete draft
+  (`draft`), including the lists (`dataset`, `contributor`, `cost`) whole, each
+  entry with its id. Adding, editing, reordering and removing an output,
+  contributor or cost item all go through this one endpoint.
 - **Optimistic concurrency.** The request carries `draft_revision`, the
   revision the client last saw. If the draft has moved on since (another tab,
   another device, an accepted AI proposal), the server answers
   `409 draft_conflict` with **the current server draft and its revision**;
   the client rebases its own change onto that draft and sends it again. This
-  is what stops field-by-field autosaves from overwriting each other.
+  is what stops concurrent saves from overwriting each other.
 - **No completeness check here.** A draft may be incomplete; values are only
   checked for type and format. Completeness is checked when the plan is
   [submitted](#submit-for-approval).
@@ -885,12 +885,12 @@ doesn't track a draft revision yet; it will need to keep the last
 **Request**
 
 ```bash
-curl -X PATCH https://api.example.ac.th/v1/dmps/dmp-soil/draft \
+curl -X PUT https://api.example.ac.th/v1/dmps/dmp-soil/draft \
   -H "Authorization: Bearer <access_token>" \
-  --json '{ "draft_revision": 41, "patch": { "title": "Soil Microbiome DMP" } }'
+  --json '{ "draft_revision": 41, "draft": { "title": "Soil Microbiome DMP", "...": "the complete draft" } }'
 ```
 
-The `patch` is a merge patch over [`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts), with outputs as
+The `draft` is the complete [`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts), with outputs as
 [`dataset.schema.ts`](../../src/schemas/dataset/dataset.schema.ts),
 contributors as
 [`contributor.schema.ts`](../../src/schemas/contributor/contributor.schema.ts)
@@ -908,8 +908,8 @@ The saved `draft` ([`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts)) and 
 
 - `draft_revision` (integer, **required**)
   The revision this change was made against.
-- `patch` (object, **required**)
-  The merge patch.
+- `draft` (object, **required**)
+  The complete draft.
 
 **Returns** the saved draft and its revision.
 
@@ -918,7 +918,7 @@ The saved `draft` ([`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts)) and 
 | HTTP status code | Code | Description |
 | --- | --- | --- |
 | 400 | `field_invalid` | A value doesn't fit its field. `param` names it. |
-| 400 | `field_locked` | The patch changes a locked field. |
+| 400 | `field_locked` | The draft changes a locked field. |
 | 409 | `draft_conflict` | `draft_revision` is out of date. The error carries the current `draft` and `draft_revision` to rebase onto. |
 
 ### Discard draft edits

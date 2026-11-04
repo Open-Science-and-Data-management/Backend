@@ -186,7 +186,7 @@ Each endpoint's **Error codes** table lists only the codes specific to it.
 
 | Decision | Where it's applied |
 | --- | --- |
-| Draft saves are one partial `PATCH` with `draft_revision`; a stale revision gets `409` with the current draft to rebase onto. | [Update a draft](./dmps.md#update-a-draft) |
+| Draft saves are one whole-draft `PUT` with `draft_revision` (ADR-0020 supersedes the earlier merge-patch proposal); a stale revision gets `409` with the current draft to rebase onto. | [Update a draft](./dmps.md#update-a-draft) |
 | A plan has one author; project membership is for following. | [Who works on a plan](./dmps.md#who-works-on-a-plan) |
 | Exports (maDMP, RDA) stay in the browser, out of the API. | not in the API |
 | Admin gets `403` on every plan endpoint. | [Who may call](#who-may-call) |

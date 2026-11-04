@@ -13,4 +13,4 @@ Accepted
 `@asteasolutions/zod-to-openapi` + `@nestjs/swagger`; ไม่ commit `openapi.json` — เสิร์ฟที่ `GET /openapi-json`
 
 ## Consequences
-- zod schema ใน `features/shared/contracts/` เป็น source of truth เดียวของรูปร่างข้อมูล (TD-4)
+- zod schema ใน `shared/contracts/` เป็น source of truth เดียวของรูปร่างข้อมูล (TD-4)
