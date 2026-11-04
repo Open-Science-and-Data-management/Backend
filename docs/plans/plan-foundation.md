@@ -48,7 +48,7 @@
   - Verify: `pnpm test -- tests/unit/domain-engine/profiles`
   - Files: `shared/domain-profiles/**`, `tests/unit/domain-engine/profiles.test.ts` (M)
   - Deps: 3
-- [ ] **Task 6: Port field policy + delta report** — `field-policy.ts` → registry canonical (ADR-0027); เทียบกับ sample arc42 §8.3
+- [x] **Task 6: Port field policy + delta report** — `field-policy.ts` → registry canonical (ADR-0027); เทียบกับ sample arc42 §8.3
   - Acceptance: registry test เขียว; delta จดใน PR description
   - Verify: `pnpm test -- tests/unit/domain-engine/field-policy`
   - Files: `shared/domain-profiles/field-policy.ts`, tests (S)
@@ -92,4 +92,4 @@
 | transformers/ONNX ยังไม่เกี่ยว แต่ lockfile หนัก | Low | ติดตั้งเฉพาะ dep ที่ phase นี้ใช้ |
 
 ## Open Questions
-- delta ของ field policy กับ arc42 §8.3 (ตอบตอน Task 6)
+- ~~delta ของ field policy กับ arc42 §8.3~~ — ตอบแล้ว: [`field-policy-delta.md`](field-policy-delta.md) (ยึด FE canonical ทั้ง 4 จุด ตาม ADR-0027; arc42 §8.3 ควรแก้ sample)
