@@ -1,5 +1,5 @@
 // dmps controller — บาง; HTTP boundary เท่านั้น
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Put, Query } from "@nestjs/common";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { CurrentUser } from "@/features/auth/session.js";
 import { DmpsService } from "./dmps.service.js";
@@ -35,5 +35,15 @@ export class DmpsController {
     const raw = include === undefined ? [] : Array.isArray(include) ? include : [include];
     const arr = raw.flatMap((v) => v.split(",")).map((v) => v.trim()).filter((v) => v.length > 0);
     return this.dmps.get(user, dmpId, arr);
+  }
+
+  @Put(":dmpId/draft")
+  saveDraft(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.saveDraft(user, dmpId, body);
+  }
+
+  @Post(":dmpId/draft/discard")
+  discardDraft(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string) {
+    return this.dmps.discardDraft(user, dmpId);
   }
 }

@@ -9,8 +9,21 @@ export class ApiError extends HttpException {
     readonly code: string,
     message: string,
     readonly param?: string,
+    /** field เพิ่มเติมใน error object เช่น draft/draft_revision ของ 409 draft_conflict (ADR-0020) */
+    readonly extra?: Record<string, unknown>,
   ) {
-    super({ error: { type: statusType(httpStatus), code, message, ...(param ? { param } : {}) } }, httpStatus);
+    super(
+      {
+        error: {
+          type: statusType(httpStatus),
+          code,
+          message,
+          ...(param ? { param } : {}),
+          ...(extra ?? {}),
+        },
+      },
+      httpStatus,
+    );
   }
 }
 
@@ -50,11 +63,17 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       const raw = typeof payload === "string" ? { message: payload } : (payload as Record<string, unknown>);
       const envelope = (typeof raw.error === "object" && raw.error !== null ? raw.error : raw) as Record<string, unknown>;
       const message = typeof envelope.message === "string" ? envelope.message : "Request failed";
+      const extra = { ...envelope };
+      delete extra.type;
+      delete extra.code;
+      delete extra.message;
+      delete extra.param;
       res.status(status).json({
         error: {
           type: statusType(status),
           code: typeof envelope.code === "string" ? envelope.code : statusType(status),
           ...(typeof envelope.param === "string" ? { param: envelope.param } : {}),
+          ...extra,
           message,
         },
       });

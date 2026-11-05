@@ -89,6 +89,32 @@ export function count(db: Db, options: ListOptions) {
   return db.select({ n: sql<number>`count(*)::int` }).from(dmps).where(buildListWhere(options));
 }
 
+/** PUT draft — CAS บน draft_revision (ADR-0020); 0 rows = มีใครแก้ก่อน → conflict */
+export function updateDraft(
+  db: Db,
+  dmpId: string,
+  input: { draft: unknown; expectedRevision: number },
+): Promise<DmpRow[]> {
+  return db
+    .update(dmps)
+    .set({
+      draft: input.draft,
+      draftRevision: input.expectedRevision + 1,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(dmps.dmpId, dmpId), eq(dmps.draftRevision, input.expectedRevision)))
+    .returning();
+}
+
+/** discard — กลับไป snapshot ที่มีอยู่ (pending → in force → ล่าสุด); revision ก้าวต่อเพื่อกัน race */
+export async function resetDraftToSnapshot(db: Db, dmpId: string, snapshot: unknown): Promise<DmpRow[]> {
+  return db
+    .update(dmps)
+    .set({ draft: snapshot, draftRevision: sql`${dmps.draftRevision} + 1`, updatedAt: new Date() })
+    .where(eq(dmps.dmpId, dmpId))
+    .returning();
+}
+
 /** plan_mode ยังไม่ freeze → ตามโครงการ (ใช้ตรวจ committee visibility ของแผน draft) */
 export function projectPlanMode(db: Db, projectId: string | null) {
   if (projectId === null) return Promise.resolve([]);

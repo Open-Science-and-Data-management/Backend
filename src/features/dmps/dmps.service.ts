@@ -2,6 +2,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { validateDraft } from "@/shared/domain-engine/validate-draft.js";
+import { dmpDraftSchema } from "@/shared/contracts/dmp.js";
+import { MADMP_SCHEMA_VERSION } from "@/shared/contracts/madmp-vocabularies.js";
 import { ApiError, fieldInvalid } from "@/shared/http/error-envelope.js";
 import { listOf, type ListEnvelope } from "@/shared/contracts/envelope.js";
 import type { AccessClaims } from "@/features/auth/jwt.js";
@@ -15,6 +17,9 @@ const createDmpSchema = z.object({ project_id: z.string().uuid().optional() });
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const SORTS = ["updated", "title", "status"] as const;
+
+/** ค่า default ของ draft field — ใช้เทียบ locked เมื่อ draft เก็บยังไม่มีค่านั้น */
+const MADMP_DEFAULTS: Record<string, unknown> = { schema_version: MADMP_SCHEMA_VERSION };
 
 export interface DmpVersionResponse {
   object: "dmp_version";
@@ -156,6 +161,74 @@ export class DmpsService {
     return row;
   }
 
+  /** PUT draft ทั้งก้อน (ADR-0020) — ตรวจ type/format เท่านั้น, locked ปฏิเสธ, CAS บน revision */
+  async saveDraft(claims: AccessClaims, dmpId: string, body: unknown) {
+    if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "Only researchers edit drafts");
+    const row = (await repo.findById(this.db, dmpId)).at(0);
+    if (row === undefined || row.dmp.createdBy !== claims.sub) {
+      throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    }
+
+    const parsedBody = z
+      .object({ draft_revision: z.number().int().nonnegative(), draft: dmpDraftSchema })
+      .safeParse(body);
+    if (!parsedBody.success) throw fieldInvalid(parsedBody.error);
+    const { draft_revision: revision, draft: draftInput } = parsedBody.data;
+
+    // locked fields — เทียบกับค่าเดิมใน draft; begin/end แก้ได้จนกว่าแผนมีผล (doc §Update a draft)
+    // เช็ค key จาก input ดิบ — zod เติม default (เช่น schema_version) ให้ output เสมอ
+    let rawDraft: Record<string, unknown> = {};
+    if (body !== null && typeof body === "object" && "draft" in body) {
+      const d = body.draft;
+      if (d !== null && typeof d === "object") rawDraft = d as Record<string, unknown>;
+    }
+    const current = (row.dmp.draft ?? {}) as Record<string, unknown>;
+    const parsedDraft: Record<string, unknown> = { ...draftInput };
+    const locked = row.dmp.status === "approved" ? ["schema_version", "begin_date", "end_date"] : ["schema_version"];
+    for (const field of locked) {
+      if (field in rawDraft && !valuesEqual(parsedDraft[field], current[field] ?? MADMP_DEFAULTS[field])) {
+        throw new ApiError(400, "field_locked", `The ${field} field is locked`, `/draft/${field}`);
+      }
+    }
+
+    const updated = (await repo.updateDraft(this.db, dmpId, { draft: draftInput, expectedRevision: revision })).at(0);
+    if (updated === undefined) {
+      // CAS ไม่ผ่าน — คืน draft ปัจจุบันให้ rebase (ADR-0020)
+      const latest = (await repo.findById(this.db, dmpId)).at(0);
+      if (latest === undefined) throw new ApiError(404, "dmp_not_found", "No plan with that id");
+      throw new ApiError(409, "draft_conflict", "The draft changed since your last read", undefined, {
+        draft: latest.dmp.draft,
+        draft_revision: latest.dmp.draftRevision,
+      });
+    }
+    return {
+      object: "dmp_draft" as const,
+      dmp_id: dmpId,
+      draft_revision: updated.draftRevision,
+      draft: updated.draft,
+    };
+  }
+
+  /** discard — กลับไปยังสิ่งที่ส่ง/มีผลแล้ว; แผนที่ไม่เคยส่ง → 409 never_submitted (archive แทน) */
+  async discardDraft(claims: AccessClaims, dmpId: string): Promise<DmpResponse> {
+    if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "Only researchers edit drafts");
+    const row = (await repo.findById(this.db, dmpId)).at(0);
+    if (row === undefined || row.dmp.createdBy !== claims.sub) {
+      throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    }
+    const versions = await repo.listVersions(this.db, dmpId);
+    if (versions.length === 0) {
+      throw new ApiError(409, "never_submitted", "The plan has no submission to go back to; archive it instead");
+    }
+    const pending = versions.find((v) => v.status === "pending");
+    const inForce =
+      row.dmp.activeVersion !== null ? versions.find((v) => v.number === row.dmp.activeVersion) : undefined;
+    const snapshot = pending?.snapshot ?? inForce?.snapshot ?? versions.at(0)?.snapshot ?? {};
+    const updated = (await repo.resetDraftToSnapshot(this.db, dmpId, snapshot)).at(0);
+    if (updated === undefined) throw new ApiError(500, "internal_error", "Discard failed");
+    return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
+  }
+
   /** ร่าง plan response — content top-level อ่านจาก draft, review_snapshot = pending → in force → draft */
   private async toResponse(
     dmp: DmpRow,
@@ -226,6 +299,12 @@ function asArray(raw?: string | string[]): string[] {
   if (raw === undefined) return [];
   const arr = Array.isArray(raw) ? raw : [raw];
   return arr.flatMap((v) => v.split(",")).map((v) => v.trim()).filter((v) => v.length > 0);
+}
+
+/** เทียบค่า locked field — วันที่ใน draft เป็น Date หลัง parse, เก็บเป็น string ใน JSONB */
+function valuesEqual(incoming: unknown, stored: unknown): boolean {
+  if (incoming instanceof Date && typeof stored === "string") return incoming.toISOString().slice(0, 10) === stored;
+  return JSON.stringify(incoming ?? null) === JSON.stringify(stored ?? null);
 }
 
 function parseLimit(raw?: string): number {

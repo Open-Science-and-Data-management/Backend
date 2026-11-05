@@ -65,7 +65,7 @@ const VALID_DRAFT = {
       keyword: [],
       domain: "generic",
       domain_metadata: {},
-      preservation: { repository: null, duration: null, format: [] },
+      preservation: { repository: undefined, duration: undefined, doi_requested: false },
       distribution: [],
     },
   ],
@@ -183,5 +183,66 @@ describe.skipIf(!dbReady)("dmps draft e2e — flow #4", () => {
       .set("Authorization", `Bearer ${committeeToken}`);
     expect(committee.status).toBe(200);
     expect(committee.body.data.some((d: { dmp_id: string }) => d.dmp_id === dmpId)).toBe(true);
+  });
+
+  it("PUT draft — save ทั้งก้อน, revision เพิ่ม; ผู้เขียนเท่านั้น (คนอื่น 404)", async () => {
+    const denied = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${otherToken}`)
+      .send({ draft_revision: 0, draft: VALID_DRAFT });
+    expect(denied.status).toBe(404);
+
+    const res = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 0, draft: VALID_DRAFT });
+    expect(res.status).toBe(200);
+    expect(res.body.object).toBe("dmp_draft");
+    expect(res.body.draft_revision).toBe(1);
+    expect(res.body.draft.title).toBe("Soil Microbiome DMP");
+  });
+
+  it("PUT draft — 409 draft_conflict ฝัง draft ปัจจุบัน + revision ให้ rebase", async () => {
+    const stale = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 0, draft: { ...VALID_DRAFT, title: "Stale edit" } });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe("draft_conflict");
+    expect(stale.body.error.draft_revision).toBe(1);
+    expect(stale.body.error.draft.title).toBe("Soil Microbiome DMP");
+  });
+
+  it("PUT draft — 400 field_invalid พร้อม JSON pointer; locked field ปฏิเสธ", async () => {
+    const badType = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 1, draft: { ...VALID_DRAFT, ethical_issues_exist: "yes" } });
+    expect(badType.status).toBe(400);
+    expect(badType.body.error.code).toBe("field_invalid");
+    expect(badType.body.error.param).toBe("/draft/ethical_issues_exist");
+
+    const locked = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 1, draft: { ...VALID_DRAFT, schema_version: "v2.0" } });
+    expect(locked.status).toBe(400);
+    expect(locked.body.error.code).toBe("field_locked");
+    expect(locked.body.error.param).toBe("/draft/schema_version");
+
+    // ส่ง schema_version ตามค่า default เดิมได้ — ไม่โดน locked
+    const sameDefault = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 1, draft: { ...VALID_DRAFT, description: "updated description" } });
+    expect(sameDefault.status).toBe(200);
+  });
+
+  it("discard — แผนที่ไม่เคยส่ง 409 never_submitted", async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/draft/discard`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("never_submitted");
   });
 });
