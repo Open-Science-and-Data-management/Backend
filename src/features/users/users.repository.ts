@@ -90,11 +90,13 @@ export async function updateProfile(
   db: Db,
   username: string,
   patch: { title?: string | null; name: string; surname: string; email: string },
-): Promise<UserRow> {
-  const [row] = await db
-    .update(users)
-    .set({ ...patch, email: normalizeEmail(patch.email) })
-    .where(eq(users.username, username))
-    .returning();
+): Promise<UserRow | undefined> {
+  const row = (
+    await db
+      .update(users)
+      .set({ ...patch, email: normalizeEmail(patch.email) })
+      .where(eq(users.username, username))
+      .returning()
+  ).at(0);
   return row;
 }

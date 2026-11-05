@@ -2,6 +2,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ZodError } from "zod";
 import { registrationSchema } from "@/shared/contracts/registration.js";
+import { userProfileSchema } from "@/shared/contracts/user.js";
 import { ApiError, fieldInvalid } from "@/shared/http/error-envelope.js";
 import { DB } from "@/database/database.module.js";
 import type { Db } from "./users.repository.js";
@@ -38,5 +39,28 @@ export class UsersService {
     const normalized = username.trim().toLowerCase();
     const taken = await repo.usernameTaken(this.db, normalized);
     return { object: "username_availability" as const, username: normalized, available: taken.length === 0 };
+  }
+
+  async getMe(username: string) {
+    const row = (await repo.findByUsername(this.db, username)).at(0);
+    if (row === undefined) throw new ApiError(401, "not_signed_in", "Sign in to continue");
+    return repo.toUserResponse(row);
+  }
+
+  async patchMe(username: string, body: unknown) {
+    const parsed = userProfileSchema.safeParse(body);
+    if (!parsed.success) {
+      const issue = parsed.error.issues.at(0);
+      const code = issue?.path.includes("email") ? "email_invalid" : "name_required";
+      throw new ApiError(400, code, issue?.message ?? "Invalid profile", issue ? `/${issue.path.join("/")}` : undefined);
+    }
+    const patch = parsed.data;
+    const conflict = await repo.emailTaken(this.db, patch.email);
+    if (conflict.length > 0 && conflict[0].username !== username) {
+      throw new ApiError(409, "email_taken", "Another account already uses this email");
+    }
+    const row = (await repo.updateProfile(this.db, username, patch));
+    if (row === undefined) throw new ApiError(401, "not_signed_in", "Sign in to continue");
+    return repo.toUserResponse(row);
   }
 }

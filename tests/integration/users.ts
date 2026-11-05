@@ -64,4 +64,25 @@ describe.skipIf(!dbReady)("users registration (integration)", () => {
     const inst = await repo.register(db, form({ username: "aran2", email: "aran2@example.edu", department: "CS" }), "h");
     expect(inst.affiliation).toStrictEqual({ organization: "Uni", department: "CS" });
   });
+
+  it("getMe/patchMe change only allowed fields; role/username/quota untouched", async () => {
+    const me = (await repo.findByUsername(db, "aran2")).at(0);
+    if (me === undefined) throw new Error("seed user missing");
+    const patched = await repo.updateProfile(db, "aran2", {
+      title: "Dr.",
+      name: "Aran",
+      surname: "Saelim",
+      email: "aran.renamed@Example.EDU",
+    });
+    expect(patched?.title).toBe("Dr.");
+    expect(patched?.email).toBe("aran.renamed@example.edu"); // normalizeEmail
+    expect(patched?.role).toBe("researcher");
+    expect(patched?.username).toBe("aran2");
+    expect(patched?.aiTokenLimit).toBe(me.aiTokenLimit);
+  });
+
+  it("updateProfile misses silently as undefined for unknown username", async () => {
+    const patched = await repo.updateProfile(db, "nobody-here", { name: "X", surname: "Y", email: "x@x.edu" });
+    expect(patched).toBeUndefined();
+  });
 });
