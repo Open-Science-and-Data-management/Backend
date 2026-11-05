@@ -15,17 +15,17 @@
 ## Task List
 
 ### Phase 1: Draft
-- [ ] **Task 1: dmps module + draft CRUD** — `POST/GET /dmps`, `GET /dmps/{id}`, `PUT /dmps/{id}/draft` + `draft_revision` + discard
+- [x] **Task 1: dmps module + draft CRUD** — `POST/GET /dmps`, `GET /dmps/{id}`, `PUT /dmps/{id}/draft` + `draft_revision` + discard
   - Acceptance: 409 `draft_conflict` พร้อม draft ปัจจุบัน; save ตรวจเฉพาะ type/format (422 พร้อม JSON pointer); locked field ปฏิเสธ
   - Verify: `pnpm test -- tests/e2e/drafts` (flow #4 — QS-3) (M)
   - Files: `src/features/dmps/**`, `tests/e2e/drafts.ts` (M)
   - Deps: projects-files จบ
-- [ ] **Task 2: submit + finalize + versions** — freeze `plan_mode`, version #1 (pending snapshot), partial unique บังคับขนาน; independent finalize ทันที + task generator ใน tx เดียว
+- [x] **Task 2: submit + finalize + versions** — freeze `plan_mode`, version #1 (pending snapshot), partial unique บังคับขนาน; independent finalize ทันที + task generator ใน tx เดียว
   - Acceptance: e2e flows #5–#7 เขียว; QS-1 (submit ขนาน 2 request หนึ่งตัวถูก Postgres ปฏิเสธ); tasks ชุดแรกเกิดครบตาม STAGE_PLAN
   - Verify: `pnpm test -- tests/e2e/submit-finalize` (M)
   - Files: `src/features/dmps/**` (M)
   - Deps: 1
-- [ ] **Task 3: decisions (approve/reject) + carry/drop/rebase** — approve → active_version + task generator + notifications ใน tx เดียว; reject → status ยัง approved; approve revision → carryEdits/rebase
+- [x] **Task 3: decisions (approve/reject) + carry/drop/rebase** — approve → active_version + task generator + notifications ใน tx เดียว; reject → status ยัง approved; approve revision → carryEdits/rebase
   - Acceptance: e2e flows #6, #8–#9 เขียว; QS-2 — ทุก minor fix จด carried/dropped
   - Verify: `pnpm test -- tests/e2e/revisions` (L → แตก commit ย่อย: approve/reject ก่อน แล้ว carry/rebase)
   - Files: `src/features/dmps/**` (M)
