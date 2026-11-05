@@ -1,6 +1,12 @@
 // dmps repository — Drizzle เดียวต่อ flow; snake_case response ตาม FE contract
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { carryEdits, rebaseWorkingCopy } from "@/shared/domain-engine/carry.js";
+import { generateTasks } from "@/shared/domain-engine/task-generator.js";
+import { diffDraft, type FieldChange } from "@/shared/domain-engine/diff-draft.js";
+import { classify } from "@/shared/domain-engine/classify.js";
+import { foldMinor } from "@/shared/domain-engine/fold-minor.js";
+import type { DmpDraftInput } from "@/shared/contracts/dmp.js";
 import { dmpVersions, dmps, notifications, projects, tasks, users } from "@/database/schema/index.js";
 import type * as schema from "@/database/schema/index.js";
 
@@ -266,6 +272,317 @@ export async function addNotifications(
 ): Promise<void> {
   if (rows.length === 0) return;
   await db.insert(notifications).values(rows);
+}
+
+/** ตัดสิน approve — activate + carry/drop (QS-2) + task generator + notifications ใน tx เดียว (หมวด 4.4) */
+export async function approveTx(
+  db: Db,
+  input: {
+    dmpId: string;
+    number: number;
+    decidedBy: string;
+    note: string | null;
+  },
+): Promise<{ dmp: DmpRow; version: VersionRow }> {
+  return db.transaction(async (tx) => {
+    // CAS บน status pending — ตัดสินซ้ำ → 0 rows
+    const decided = await tx
+      .update(dmpVersions)
+      .set({ status: "approved", decidedBy: input.decidedBy, decidedAt: new Date(), decisionNote: input.note })
+      .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, input.number), eq(dmpVersions.status, "pending")))
+      .returning();
+    const version = decided.at(0);
+    if (version === undefined) throw new NotPendingError();
+
+    const current = (await tx.select().from(dmps).where(eq(dmps.dmpId, input.dmpId)).limit(1)).at(0);
+    if (current === undefined) throw new Error("dmp disappeared during approve");
+    const isFirst = current.activeVersion === null;
+    const inForce =
+      !isFirst && current.activeVersion !== null
+        ? (await tx.select().from(dmpVersions).where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, current.activeVersion))).limit(1)).at(0)
+        : undefined;
+
+    const newSnapshot = version.snapshot as Record<string, unknown>;
+    let cancelledTitles: string[] = [];
+    let carried: unknown = null;
+    let dropped: unknown = null;
+    if (!isFirst && inForce !== undefined) {
+      // QS-2 — minor fixes ที่ fold บน version in force ระหว่างรอ: carry หรือจด dropped
+      // jsonb ที่เก็บไว้คือ DmpDraftInput ที่ผ่าน validateDraft ตอน submit — คืน type ให้ engine
+      const base = (version.basedOnSnapshot ?? inForce.snapshot) as DmpDraftInput;
+      const inForceSnapshot = inForce.snapshot as DmpDraftInput;
+      const carry = carryEdits(base, inForceSnapshot, newSnapshot);
+      carried = carry.carried;
+      dropped = carry.dropped;
+      await tx
+        .update(dmpVersions)
+        .set({ carriedEdits: carry.carried, droppedEdits: carry.dropped })
+        .where(eq(dmpVersions.versionId, version.versionId));
+      // rebase working copy ของผู้เขียน (แต่งจาก base เดิม) ต่อท้าย snapshot ใหม่
+      const rebased = rebaseWorkingCopy(current.draft as DmpDraftInput, newSnapshot, base);
+      // tasks ของ output ที่ revision ลบออก → cancelled (จด reason — preservation)
+      const oldIds = datasetIds(inForceSnapshot);
+      const newIds = datasetIds(newSnapshot);
+      const removed = [...oldIds].filter((id) => !newIds.has(id) && id !== "");
+      if (removed.length > 0) {
+        const cancelled = await tx
+          .update(tasks)
+          .set({
+            status: "cancelled",
+            cancelledFrom: sql`${tasks.status}`,
+            cancelReason: "output_removed",
+            cancelledDatasetTitle: sql`title`,
+            cancelledAt: new Date(),
+          })
+          .where(and(eq(tasks.dmpId, input.dmpId), inArray(tasks.datasetId, removed), inArray(tasks.status, ["todo", "in_progress"])))
+          .returning({ title: tasks.title });
+        cancelledTitles = cancelled.map((t) => t.title);
+      }
+      await tx
+        .update(dmps)
+        .set({ draft: rebased, updatedAt: new Date() })
+        .where(eq(dmps.dmpId, input.dmpId));
+    }
+
+    // task generator — deterministic จาก outputs ใน snapshot ใหม่ (ชุดแรกเมื่อไม่มี tasks_generated)
+    let generated: { title: string; details: string; lifecycleStage: "collect" | "process" | "analyse" | "preserve" | "share"; priority: "low" | "medium" | "high"; datasetId: string }[] = [];
+    if (!current.tasksGenerated) {
+      const outputs = Array.isArray(newSnapshot.dataset) ? newSnapshot.dataset as Record<string, unknown>[] : [];
+      generated = generateTasks(
+        outputs.map((o) => ({
+          dataset_id: typeof o.dataset_id === "string" ? o.dataset_id : "",
+          title: typeof o.title === "string" ? o.title : "",
+          type: typeof o.type === "string" ? o.type : "other",
+          access: typeof o.access === "string" ? o.access : "closed",
+        })),
+      ).map((t) => ({ title: t.title, details: t.details, lifecycleStage: t.lifecycle_stage, priority: t.priority, datasetId: t.dataset_id }));
+      if (generated.length > 0) {
+        await tx.insert(tasks).values(
+          generated.map((t) => ({
+            dmpId: input.dmpId,
+            datasetId: t.datasetId,
+            title: t.title,
+            details: t.details,
+            lifecycleStage: t.lifecycleStage,
+            priority: t.priority,
+            sourceVersionId: version.versionId,
+          })),
+        );
+      }
+    }
+
+    const updated = (
+      await tx
+        .update(dmps)
+        .set({ status: "approved", activeVersion: input.number, tasksGenerated: true, updatedAt: new Date() })
+        .where(eq(dmps.dmpId, input.dmpId))
+        .returning()
+    ).at(0);
+    if (updated === undefined) throw new Error("dmp update failed during approve");
+
+    const notes: (typeof notifications.$inferInsert)[] = [
+      {
+        userId: current.createdBy,
+        type: "dmp_approved",
+        title: `แผน "${current.title}" ได้รับอนุมัติ (version ${String(input.number)})`,
+        message: input.note,
+        link: `/dmps/${input.dmpId}`,
+        dmpId: input.dmpId,
+      },
+    ];
+    if (cancelledTitles.length > 0) {
+      notes.push({
+        userId: current.createdBy,
+        type: "tasks_cancelled",
+        title: `งานถูกยกเลิก ${String(cancelledTitles.length)} รายการ (output ถูกลบจาก revision)`,
+        message: cancelledTitles.join(", "),
+        link: `/dmps/${input.dmpId}`,
+        dmpId: input.dmpId,
+      });
+    }
+    await tx.insert(notifications).values(notes);
+    const freshVersion = {
+      ...version,
+      status: "approved" as const,
+      decidedBy: input.decidedBy,
+      decidedAt: new Date(),
+      decisionNote: input.note,
+      carriedEdits: carried,
+      droppedEdits: dropped,
+    };
+    return { dmp: updated, version: freshVersion };
+  });
+}
+
+/** ตัดสิน reject — first submission กลับ draft; revision: version in force คงเดิม (ADR-0021) */
+export async function rejectTx(
+  db: Db,
+  input: { dmpId: string; number: number; decidedBy: string; note: string },
+): Promise<{ dmp: DmpRow; version: VersionRow }> {
+  return db.transaction(async (tx) => {
+    const decided = await tx
+      .update(dmpVersions)
+      .set({ status: "rejected", decidedBy: input.decidedBy, decidedAt: new Date(), decisionNote: input.note })
+      .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, input.number), eq(dmpVersions.status, "pending")))
+      .returning();
+    const version = decided.at(0);
+    if (version === undefined) throw new NotPendingError();
+
+    const current = (await tx.select().from(dmps).where(eq(dmps.dmpId, input.dmpId)).limit(1)).at(0);
+    if (current === undefined) throw new Error("dmp disappeared during reject");
+    // revision ถูกส่งกลับ → แผนยัง approved; first submission → กลับ draft
+    const backToDraft = current.activeVersion === null;
+    const updated = (
+      await tx
+        .update(dmps)
+        .set({ status: backToDraft ? "draft" : "approved", updatedAt: new Date() })
+        .where(eq(dmps.dmpId, input.dmpId))
+        .returning()
+    ).at(0);
+    if (updated === undefined) throw new Error("dmp update failed during reject");
+    await tx.insert(notifications).values({
+      userId: current.createdBy,
+      type: "dmp_returned",
+      title: `แผน "${current.title}" ถูกส่งกลับ (version ${String(input.number)})`,
+      message: input.note,
+      link: `/dmps/${input.dmpId}`,
+      dmpId: input.dmpId,
+    });
+    return { dmp: updated, version };
+  });
+}
+
+/** submit revision — version ถัดไปแบบ pending; จด changes + based_on_snapshot (in force ตอน submit) */
+export async function revisionTx(
+  db: Db,
+  input: {
+    dmpId: string;
+    draft: DmpDraftInput;
+    draftRevision: number;
+    title: string;
+    submittedBy: string;
+    notificationAuthor: { title: string };
+    notificationReviewers: { title: string };
+    reviewerIds: string[];
+  },
+): Promise<{ dmp: DmpRow; version: VersionRow }> {
+  return db.transaction(async (tx) => {
+    const current = (await tx.select().from(dmps).where(eq(dmps.dmpId, input.dmpId)).limit(1)).at(0);
+    if (current === undefined) throw new Error("dmp disappeared during revision");
+    if (current.activeVersion === null) throw new Error("revision without version in force");
+    const inForce = (
+      await tx
+        .select()
+        .from(dmpVersions)
+        .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, current.activeVersion)))
+        .limit(1)
+    ).at(0);
+    if (inForce === undefined) throw new Error("version in force disappeared during revision");
+
+    const changes = diffDraft(input.draft, inForce.snapshot as DmpDraftInput);
+    if (changes.length === 0) throw new NoNewEditsError();
+    const editType = classify(changes);
+
+    const maxNumber =
+      (
+        await tx
+          .select({ n: sql<number>`coalesce(max(${dmpVersions.number}), 0)::int` })
+          .from(dmpVersions)
+          .where(eq(dmpVersions.dmpId, input.dmpId))
+      ).at(0)?.n ?? 0;
+    const inserted = await tx
+      .insert(dmpVersions)
+      .values({
+        dmpId: input.dmpId,
+        number: maxNumber + 1,
+        status: "pending",
+        snapshot: input.draft,
+        changes,
+        editType,
+        basedOnSnapshot: inForce.snapshot,
+        submittedBy: input.submittedBy,
+        submittedAt: new Date(),
+      })
+      .returning();
+    const version = inserted.at(0);
+    if (version === undefined) throw new Error("version disappeared after insert");
+
+    const dmp = (
+      await tx.update(dmps).set({ status: "pending", updatedAt: new Date() }).where(eq(dmps.dmpId, input.dmpId)).returning()
+    ).at(0);
+    if (dmp === undefined) throw new Error("dmp update failed during revision");
+
+    const notes: (typeof notifications.$inferInsert)[] = [
+      {
+        userId: input.submittedBy,
+        type: "dmp_submitted",
+        title: input.notificationAuthor.title,
+        message: null,
+        link: `/dmps/${input.dmpId}`,
+        dmpId: input.dmpId,
+      },
+      ...input.reviewerIds.map((userId) => ({
+        userId,
+        type: "review_requested" as const,
+        title: input.notificationReviewers.title,
+        message: null,
+        link: `/dmps/${input.dmpId}`,
+        dmpId: input.dmpId,
+      })),
+    ];
+    await tx.insert(notifications).values(notes);
+    return { dmp, version };
+  });
+}
+
+/** ไม่มีอะไรแก้ตั้งแต่ version in force */
+/** minor edits — fold ลง snapshot ของ version in force + จด minor_edits; pending ไม่ถูกแตะ (flow #8) */
+export async function minorEditsTx(
+  db: Db,
+  input: { dmpId: string; draft: DmpDraftInput; activeVersion: number; hasPending: boolean },
+): Promise<VersionRow> {
+  return db.transaction(async (tx) => {
+    const inForce = (
+      await tx
+        .select()
+        .from(dmpVersions)
+        .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, input.activeVersion)))
+        .limit(1)
+    ).at(0);
+    if (inForce === undefined) throw new Error("version in force disappeared during minor edits");
+    const inForceSnapshot = inForce.snapshot as DmpDraftInput;
+    const changes = diffDraft(input.draft, inForceSnapshot);
+    if (changes.length === 0) throw new NoNewEditsError();
+    // ระหว่าง revision รอ — major อยู่กับ pending แล้ว, fold เฉพาะ minor ได้;
+    // ไม่มี pending → major ต้องยิง revision แทน
+    if (!input.hasPending && classify(changes) === "major") throw new EditsIncludeMajorError();
+    const folded = foldMinor(inForceSnapshot, input.draft, changes);
+    const minorEdits = [...((inForce.minorEdits ?? []) as FieldChange[]), ...folded.minorEdits];
+    const updated = await tx
+      .update(dmpVersions)
+      .set({ snapshot: folded.snapshot, minorEdits })
+      .where(eq(dmpVersions.versionId, inForce.versionId))
+      .returning();
+    const version = updated.at(0);
+    if (version === undefined) throw new Error("minor edits update failed");
+    return version;
+  });
+}
+
+/** ไม่มีอะไรแก้ตั้งแต่ version in force */
+export class NoNewEditsError extends Error {}
+
+/** มี major ปน — ต้องยิง revision/finalize แทน */
+export class EditsIncludeMajorError extends Error {}
+
+export class NotPendingError extends Error {}
+
+/** dataset ids ใน snapshot — ตัดสิน output ที่ถูกลบตอน approve revision */
+function datasetIds(snapshot: DmpDraftInput): Set<string> {
+  const list = Array.isArray((snapshot as Record<string, unknown>).dataset)
+    ? ((snapshot as Record<string, unknown>).dataset as unknown[])
+    : [];
+  return new Set(list.map((d) => (d !== null && typeof d === "object" && typeof (d as Record<string, unknown>).dataset_id === "string" ? (d as Record<string, unknown>).dataset_id as string : "")));
 }
 
 /** plan_mode ยังไม่ freeze → ตามโครงการ (ใช้ตรวจ committee visibility ของแผน draft) */

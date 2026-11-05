@@ -193,6 +193,7 @@ export const dmpVersions = pgTable(
     minorEdits: jsonb("minor_edits"),
     carriedEdits: jsonb("carried_edits"),
     droppedEdits: jsonb("dropped_edits"), // จดแทนการหายเงียบ — QS-2
+    basedOnSnapshot: jsonb("based_on_snapshot"), // snapshot ของ version in force ตอน submit revision — base ของ carryEdits
     submittedBy: uuid("submitted_by").references(() => users.userId),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     decidedBy: uuid("decided_by").references(() => users.userId),

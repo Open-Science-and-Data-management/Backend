@@ -1,5 +1,5 @@
 // dmps controller — บาง; HTTP boundary เท่านั้น
-import { Body, Controller, Get, Inject, Param, Post, Put, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Put, Query } from "@nestjs/common";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { CurrentUser } from "@/features/auth/session.js";
 import { DmpsService } from "./dmps.service.js";
@@ -47,6 +47,36 @@ export class DmpsController {
     return this.dmps.discardDraft(user, dmpId);
   }
 
+  @Post(":dmpId/versions/:number/approve")
+  approve(
+    @CurrentUser() user: AccessClaims,
+    @Param("dmpId") dmpId: string,
+    @Param("number") number: string,
+    @Body() body: unknown,
+  ) {
+    return this.dmps.decide(user, dmpId, parseNumber(number), "approve", body);
+  }
+
+  @Post(":dmpId/versions/:number/reject")
+  reject(
+    @CurrentUser() user: AccessClaims,
+    @Param("dmpId") dmpId: string,
+    @Param("number") number: string,
+    @Body() body: unknown,
+  ) {
+    return this.dmps.decide(user, dmpId, parseNumber(number), "reject", body);
+  }
+
+  @Post(":dmpId/minor-edits")
+  saveMinorEdits(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.saveMinorEdits(user, dmpId, body);
+  }
+
+  @Post(":dmpId/revisions")
+  submitRevision(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.submitRevision(user, dmpId, body);
+  }
+
   @Post(":dmpId/submit")
   submit(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
     return this.dmps.submit(user, dmpId, body);
@@ -56,4 +86,13 @@ export class DmpsController {
   finalize(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
     return this.dmps.finalize(user, dmpId, body);
   }
+}
+
+/** เลขเวอร์ชันจาก path — ไม่ใช่จำนวนเต็ม → 400 */
+function parseNumber(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new BadRequestException({ code: "version_not_found", message: "No version with that number" });
+  }
+  return n;
 }

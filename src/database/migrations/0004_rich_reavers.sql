@@ -1,0 +1,1 @@
+ALTER TABLE "dmp_versions" ADD COLUMN "based_on_snapshot" jsonb;

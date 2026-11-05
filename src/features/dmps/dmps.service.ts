@@ -3,7 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { validateDraft } from "@/shared/domain-engine/validate-draft.js";
 import { generateTasks } from "@/shared/domain-engine/task-generator.js";
-import { dmpDraftSchema } from "@/shared/contracts/dmp.js";
+import { dmpDraftSchema, type DmpDraftInput } from "@/shared/contracts/dmp.js";
 import { MADMP_SCHEMA_VERSION } from "@/shared/contracts/madmp-vocabularies.js";
 import { ApiError, fieldInvalid } from "@/shared/http/error-envelope.js";
 import { listOf, type ListEnvelope } from "@/shared/contracts/envelope.js";
@@ -31,9 +31,12 @@ export interface DmpVersionResponse {
   created_at: Date;
   decided_at: Date | null;
   decided_by: string | null;
-  approver: null;
+  approver: { user_id: string; name: string; position: string; mbox: string | null } | null;
   note: string | null;
   minor_edits: unknown[];
+  carried_minor_edits?: unknown;
+  dropped_minor_edits?: unknown;
+  plan_status?: string;
 }
 
 export interface DmpResponse {
@@ -364,6 +367,147 @@ export class DmpsService {
     }
   }
 
+  /** minor edits — ทุก change ต้อง minor; fold ลง version in force ทันที (flow #8) */
+  async saveMinorEdits(claims: AccessClaims, dmpId: string, body: unknown): Promise<DmpVersionResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const revision = parseRevision(body);
+    const draft = row.dmp.draft as DmpDraftInput;
+    if (revision !== row.dmp.draftRevision) {
+      throw new ApiError(409, "draft_conflict", "The draft changed since your last read", undefined, {
+        draft: row.dmp.draft,
+        draft_revision: row.dmp.draftRevision,
+      });
+    }
+    if (row.dmp.activeVersion === null) {
+      throw new ApiError(409, "plan_not_in_force", "The plan has no version in force yet");
+    }
+    const hasPending = (await repo.listVersions(this.db, dmpId)).some((v) => v.status === "pending");
+    try {
+      const version = await repo.minorEditsTx(this.db, { dmpId, draft, activeVersion: row.dmp.activeVersion, hasPending });
+      return toVersionResponse(version);
+    } catch (error) {
+      if (error instanceof repo.NoNewEditsError) {
+        throw new ApiError(409, "no_new_edits", "Nothing to save");
+      }
+      if (error instanceof repo.EditsIncludeMajorError) {
+        throw new ApiError(409, "edits_include_major", "At least one edit is major; submit a revision instead");
+      }
+      throw error;
+    }
+  }
+
+  /** submit revision — major/minor ก็ได้ แต่ต้องมีการแก้จริง; หนึ่ง pending ต่อแผน (flow #8) */
+  async submitRevision(claims: AccessClaims, dmpId: string, body: unknown): Promise<DmpVersionResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const revision = parseRevision(body);
+    const draft = row.dmp.draft as DmpDraftInput;
+    if (revision !== row.dmp.draftRevision) {
+      throw new ApiError(409, "draft_conflict", "The draft changed after it was reviewed", undefined, {
+        draft: row.dmp.draft,
+        draft_revision: row.dmp.draftRevision,
+      });
+    }
+    const versions = await repo.listVersions(this.db, dmpId);
+    const pending = versions.find((v) => v.status === "pending");
+    if (pending !== undefined) {
+      throw new ApiError(409, "revision_pending", "Another version is waiting on a decision");
+    }
+    const inForce =
+      row.dmp.activeVersion !== null ? versions.find((v) => v.number === row.dmp.activeVersion) : undefined;
+    if (inForce === undefined) {
+      throw new ApiError(409, "plan_not_in_force", "Submit the plan first");
+    }
+    const mode = row.dmp.planMode ?? (await repo.projectPlanMode(this.db, row.dmp.projectId)).at(0)?.mode;
+    if (mode !== "institutional") {
+      throw new ApiError(409, "plan_is_independent", "Use Finalize a plan");
+    }
+    const check = validateDraft(draft);
+    if (!check.ok) {
+      const first = check.errors.at(0);
+      if (first === undefined) throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items");
+      throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items", first.path, {
+        items: check.errors.map((e) => ({ label: e.message, section: e.path })),
+      });
+    }
+    const reviewerIds = (await repo.reviewers(this.db)).map((r) => r.userId);
+    try {
+      const { version } = await repo.revisionTx(this.db, {
+        dmpId,
+        draft,
+        draftRevision: revision,
+        title: row.dmp.title,
+        submittedBy: claims.sub,
+        notificationAuthor: { title: `ส่ง revision ของแผน "${row.dmp.title}" แล้ว` },
+        notificationReviewers: { title: `มี revision รอพิจารณา: "${row.dmp.title}"` },
+        reviewerIds,
+      });
+      return toVersionResponse(version);
+    } catch (error) {
+      if (error instanceof repo.NoNewEditsError) {
+        throw new ApiError(409, "no_new_edits", "Nothing has changed since the version in force");
+      }
+      if (isUniqueViolation(error)) {
+        throw new ApiError(409, "revision_pending", "Another version is waiting on a decision");
+      }
+      throw error;
+    }
+  }
+
+  /** approve/reject — committee/chief เท่านั้น; approve → carry/drop + tasks + notifications (flow #6, #8–#9) */
+  async decide(
+    claims: AccessClaims,
+    dmpId: string,
+    number: number,
+    action: "approve" | "reject",
+    body: unknown,
+  ): Promise<DmpVersionResponse> {
+    if (claims.role === "admin") throw new ApiError(403, "permission_denied", "Admin has no plan access yet");
+    if (claims.role === "researcher") throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    const row = (await repo.findById(this.db, dmpId)).at(0);
+    if (row === undefined) throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    const mode = row.dmp.planMode ?? (await repo.projectPlanMode(this.db, row.dmp.projectId)).at(0)?.mode;
+    if (mode !== "institutional") {
+      throw new ApiError(403, "plan_not_reviewable", "The plan is independent; the committee has no part in it");
+    }
+    const parsed = z
+      .object({ position: z.string().trim().min(1), note: z.string().trim().optional() })
+      .safeParse(body);
+    if (!parsed.success) throw fieldInvalid(parsed.error);
+    const position = parsed.data.position;
+    const note = parsed.data.note && parsed.data.note.length > 0 ? parsed.data.note : null;
+    if (action === "reject" && note === null) {
+      throw new ApiError(400, "note_required", "A version can't be sent back without a reason", "/note");
+    }
+    const author = (await repo.findAuthor(this.db, row.dmp.createdBy)).at(0);
+    if (author === undefined) throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    const approver = {
+      user_id: claims.sub,
+      name: claims.username,
+      position,
+      mbox: author.email,
+    };
+    try {
+      if (action === "approve") {
+        const { version } = await repo.approveTx(this.db, { dmpId, number, decidedBy: claims.sub, note });
+        return {
+          ...toVersionResponse(version),
+          approver,
+          carried_minor_edits: version.carriedEdits ?? null,
+          dropped_minor_edits: version.droppedEdits ?? null,
+        };
+      }
+      // note ไม่เป็น null แล้ว — guard ด้านบนคืน 400 ก่อนถึงบรรทัดนี้ (reject เท่านั้น)
+      if (note === null) throw new ApiError(400, "note_required", "A note is required");
+      const { dmp, version } = await repo.rejectTx(this.db, { dmpId, number, decidedBy: claims.sub, note });
+      return { ...toVersionResponse(version), approver, plan_status: dmp.status };
+    } catch (error) {
+      if (error instanceof repo.NotPendingError) {
+        throw new ApiError(409, "version_not_pending", "That version was already decided");
+      }
+      throw error;
+    }
+  }
+
   /** author-only gate ของ use-case submit/finalize — แผนต้องเป็นของผู้เรียก */
   private async findOwnedDraft(claims: AccessClaims, dmpId: string) {
     if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "Only researchers submit plans");
@@ -446,9 +590,11 @@ function asArray(raw?: string | string[]): string[] {
   return arr.flatMap((v) => v.split(",")).map((v) => v.trim()).filter((v) => v.length > 0);
 }
 
-/** เทียบค่า locked field — วันที่ใน draft เป็น Date หลัง parse, เก็บเป็น string ใน JSONB */
+/** เทียบค่า locked field — วันที่ parse แล้วเป็น Date ส่วน JSONB เก็บเป็น ISO string (มี/ไม่มีเวลา) */
 function valuesEqual(incoming: unknown, stored: unknown): boolean {
-  if (incoming instanceof Date && typeof stored === "string") return incoming.toISOString().slice(0, 10) === stored;
+  if (incoming instanceof Date && typeof stored === "string" && stored.length >= 10) {
+    return incoming.toISOString().slice(0, 10) === stored.slice(0, 10);
+  }
   return JSON.stringify(incoming ?? null) === JSON.stringify(stored ?? null);
 }
 
