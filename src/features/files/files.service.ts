@@ -8,6 +8,7 @@ import type { AccessClaims } from "@/features/auth/jwt.js";
 import { ProjectsService } from "@/features/projects/projects.service.js";
 import { DB } from "@/database/database.module.js";
 import type { Db, FileRow } from "./files.repository.js";
+import { parseDocx } from "./docx.js";
 import * as repo from "./files.repository.js";
 
 type FileResponse = ReturnType<typeof repo.toFileResponse>;
@@ -43,14 +44,25 @@ export class FilesService {
     if (purpose === "proposal" && file.mimetype !== DOCX_MIME) {
       throw new ApiError(400, "file_type_not_allowed", "A proposal must be a .docx file");
     }
+    const fileType = file.mimetype === DOCX_MIME ? "docx" : file.mimetype === "application/pdf" ? "pdf" : "other";
+    // parse ก่อนเขียนทุกอย่าง — พัง → 422 ไม่ทิ้ง row/blob ครึ่ง ๆ
+    let extractedText: string | null = null;
+    if (fileType === "docx") {
+      try {
+        extractedText = await parseDocx(file.buffer);
+      } catch {
+        throw new ApiError(422, "file_unparseable", "The .docx file could not be read");
+      }
+    }
     const row = await repo.insert(this.db, {
       projectId,
       uploadedBy: claims.sub,
       filename: file.originalname,
-      fileType: file.mimetype === DOCX_MIME ? "docx" : file.mimetype === "application/pdf" ? "pdf" : "other",
+      fileType,
       purpose: purpose as FileRow["purpose"],
       byteSize: file.size,
       mimeType: file.mimetype,
+      docxExtractedText: extractedText,
       storagePath: await this.storage.put(file.buffer),
     });
     return repo.toFileResponse(row);

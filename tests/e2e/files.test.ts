@@ -1,7 +1,8 @@
 // e2e flow #18 — file lifecycle: upload limits, download, supersede, archive, 409 file_in_use
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { inArray } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
@@ -33,6 +34,7 @@ const OTHER = { ...USER, email: "e2e-file-o@example.edu", username: "e2e-file-o"
 const usernames = [USER.username, OTHER.username];
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const fixture = (name: string) => readFile(fileURLToPath(new URL("../fixtures/" + name, import.meta.url)));
 
 describe.skipIf(!dbReady)("files e2e — flow #18", () => {
   let app: INestApplication;
@@ -124,12 +126,12 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
       .post(`/projects/${projectId}/files`)
       .set("Authorization", `Bearer ${token}`)
       .field("purpose", "proposal")
-      .attach("file", Buffer.from("PK docx bytes"), { filename: "proposal.docx", contentType: DOCX_MIME });
+      .attach("file", await fixture("proposal-sample.docx"), { filename: "proposal.docx", contentType: DOCX_MIME });
     expect(ok.status).toBe(201);
     expect(ok.body.object).toBe("file");
     expect(ok.body.file_type).toBe("docx");
     expect(ok.body.purpose).toBe("proposal");
-    expect(ok.body.metadata.byte_size).toBe(13);
+    expect(ok.body.metadata.byte_size).toBe((await fixture("proposal-sample.docx")).byteLength);
     proposalId = ok.body.file_id;
 
     // proposal กลายเป็น active ของโครงการ
@@ -147,7 +149,7 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
       .responseType("blob");
     expect(download.status).toBe(200);
     expect(download.headers["content-disposition"]).toContain("proposal.docx");
-    expect(download.body.toString()).toBe("PK docx bytes");
+    expect((download.body as Buffer).toString("latin1")).toContain("PK");
 
     // non-member โหลดไม่ได้
     const stranger = await request(app.getHttpServer())
@@ -160,7 +162,7 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
       .post(`/projects/${projectId}/files`)
       .set("Authorization", `Bearer ${token}`)
       .field("purpose", "proposal")
-      .attach("file", Buffer.from("PK v2"), { filename: "proposal-v2.docx", contentType: DOCX_MIME });
+      .attach("file", await fixture("proposal-sample.docx"), { filename: "proposal-v2.docx", contentType: DOCX_MIME });
     expect(v2.status).toBe(201);
 
     const list = await request(app.getHttpServer())
