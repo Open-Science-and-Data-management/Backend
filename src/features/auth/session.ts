@@ -1,7 +1,11 @@
 // auth guard — Bearer JWT → req.user; 401 not_signed_in / token_expired (flow #15 seam)
-import { type ExecutionContext, HttpException, Injectable, createParamDecorator, type CanActivate } from "@nestjs/common";
+import { type ExecutionContext, HttpException, Inject, Injectable, SetMetadata, createParamDecorator, type CanActivate } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import type { Request, Response } from "express";
 import { verifyAccessToken, type AccessClaims } from "./jwt.js";
+
+export const IS_PUBLIC = "isPublic";
+export const Public = () => SetMetadata(IS_PUBLIC, true);
 
 class HttpError extends HttpException {
   constructor(status: number, code: string, message: string) {
@@ -15,7 +19,12 @@ export interface AuthedRequest extends Request {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // ครอบทุก endpoint — เส้นทาง public (sign-up/sign-in/refresh) ประกาศ @Public ชัดเจน
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [context.getHandler(), context.getClass()]);
+    if (isPublic) return true;
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     const header = req.headers.authorization ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";

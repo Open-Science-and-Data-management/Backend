@@ -64,6 +64,7 @@ describe.skipIf(!dbReady)("refresh rotation + reuse detection (integration)", ()
   });
 
   it("reuse revokes the whole family", async () => {
+    await db.execute(sql`delete from refresh_tokens`); // เริ่ม family สะอาด — เทสก่อนหน้าเหลือ token active ของ user เดียวกัน
     const user = (await usersRepo.findByUsername(db, "auth-aran")).at(0);
     if (user === undefined) throw new Error("seed user missing");
     const first = await refresh.issueRefreshToken(db, user.userId);

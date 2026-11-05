@@ -30,8 +30,7 @@ export class UsersService {
     if (emailInUse.length > 0) throw new ApiError(409, "email_taken", "Another account already uses this email");
 
     const passwordHash = await hashPassword(input.password);
-    const row = await repo.register(this.db, input, passwordHash);
-    return repo.toUserResponse(row);
+    return repo.register(this.db, input, passwordHash); // controller แปลงเป็น session (สมัครแล้ว sign-in ทันที)
   }
 
   async isUsernameAvailable(username: string | undefined) {

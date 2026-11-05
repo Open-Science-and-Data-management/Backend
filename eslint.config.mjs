@@ -21,7 +21,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/shared/domain-engine/__fixtures__/**/*.ts"],
+    files: ["tests/e2e/**/*.ts", "src/shared/domain-engine/__fixtures__/**/*.ts"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { parser: tseslint.parser, parserOptions: { projectService: false } },
   },

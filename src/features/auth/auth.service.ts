@@ -57,6 +57,11 @@ export class AuthService {
     return this.buildSession(user, token, row.expiresAt);
   }
 
+  /** POST /users — สมัครแล้ว sign-in ทันที (FE contract: session object) */
+  async issueSessionFor(user: UserRow) {
+    return this.issueSession(user);
+  }
+
   private async buildSession(user: UserRow, refreshToken: string, refreshExpiresAt: Date) {
     const { token, expiresAt } = await signAccessToken({ sub: user.userId, username: user.username, role: user.role });
     return {

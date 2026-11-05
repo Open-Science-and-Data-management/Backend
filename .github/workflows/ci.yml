@@ -1,0 +1,23 @@
+# CI stage 1 — lint + unit (M1); e2e ต่อ Postgres เพิ่มตั้งแต่ M3 (SPEC.md Success Criteria 4)
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  stage1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test -- tests/unit

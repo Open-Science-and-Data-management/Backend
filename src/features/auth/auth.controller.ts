@@ -2,8 +2,9 @@
 import { Body, Controller, Delete, Inject, Post, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { AuthService } from "./auth.service.js";
-import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from "./session.js";
+import { clearRefreshCookie, Public, readRefreshCookie, setRefreshCookie } from "./session.js";
 
+@Public()
 @Controller("auth")
 export class AuthController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
