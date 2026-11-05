@@ -34,13 +34,14 @@ export function toProjectResponse(
   };
 }
 
-/** counts ต่อ card (ADR-0024) — scalar subqueries ใน query เดียว */
+/** counts ต่อ card (ADR-0024) — scalar subqueries ใน query เดียว; อ้าง projects.project_id แบบ qualified เอง
+ *  (Drizzle จะย่อเป็น "project_id" ซึ่ง Postgres bind เข้าตารางใน subquery ก่อน — นับเกิน) */
 const countSelect = {
-  fileCount: sql<number>`(select count(*)::int from file_records f where f.project_id = ${projects.projectId})`,
-  memberCount: sql<number>`(select count(*)::int from project_members m where m.project_id = ${projects.projectId})`,
+  fileCount: sql<number>`(select count(*)::int from file_records f where f.project_id = projects.project_id)`,
+  memberCount: sql<number>`(select count(*)::int from project_members m where m.project_id = projects.project_id)`,
   awaitingReview: sql<boolean>`exists (
     select 1 from dmp_versions v join dmps d on d.dmp_id = v.dmp_id
-    where d.project_id = ${projects.projectId} and v.status = 'pending')`,
+    where d.project_id = projects.project_id and v.status = 'pending')`,
 };
 
 function baseQuery(db: Db) {

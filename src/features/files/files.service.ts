@@ -4,14 +4,29 @@ import { ApiError } from "@/shared/http/error-envelope.js";
 import { listOf, type ListEnvelope } from "@/shared/contracts/envelope.js";
 import { config } from "@/shared/config/index.js";
 import { FILE_STORAGE, type FileStorage } from "@/shared/ports/file-storage.js";
+import { EMBEDDING, type Embedding } from "@/shared/ports/embedding.js";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { ProjectsService } from "@/features/projects/projects.service.js";
 import { DB } from "@/database/database.module.js";
+import { blocksToChunks } from "./chunking.js";
+import { parseDocx, parseDocxBlocks } from "./docx.js";
 import type { Db, FileRow } from "./files.repository.js";
-import { parseDocx } from "./docx.js";
 import * as repo from "./files.repository.js";
 
 type FileResponse = ReturnType<typeof repo.toFileResponse>;
+
+function cosine(a: number[], b: number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / Math.sqrt(na * nb);
+}
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PURPOSES = ["proposal", "task_deliverable", "evidence"] as const;
@@ -21,6 +36,7 @@ export class FilesService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(FILE_STORAGE) private readonly storage: FileStorage,
+    @Inject(EMBEDDING) private readonly embedding: Embedding,
     @Inject(ProjectsService) private readonly projectsService: ProjectsService,
   ) {}
 
@@ -45,26 +61,48 @@ export class FilesService {
       throw new ApiError(400, "file_type_not_allowed", "A proposal must be a .docx file");
     }
     const fileType = file.mimetype === DOCX_MIME ? "docx" : file.mimetype === "application/pdf" ? "pdf" : "other";
-    // parse ก่อนเขียนทุกอย่าง — พัง → 422 ไม่ทิ้ง row/blob ครึ่ง ๆ
+    // parse → chunk → embed ก่อนเขียนทุกอย่าง — พังตรงไหน → 422 ไม่ทิ้งข้อมูลครึ่ง ๆ
     let extractedText: string | null = null;
+    let buildChunks: (fileId: string) => repo.ChunkInsert[] = () => [];
     if (fileType === "docx") {
       try {
         extractedText = await parseDocx(file.buffer);
-      } catch {
+        const blocks = await parseDocxBlocks(file.buffer);
+        const rag = config().files.rag;
+        const chunks = blocksToChunks(blocks, {
+          targetTokens: rag.chunkTargetTokens,
+          overlapPercent: rag.chunkOverlapPercent,
+        });
+        const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
+        buildChunks = (fileId) =>
+          chunks.map((c, i) => ({
+            fileId,
+            chunkIndex: c.chunk_index,
+            content: c.content,
+            headingPath: c.heading_path,
+            embedding: vectors[i],
+            embeddingModel: this.embedding.model,
+          }));
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError(422, "file_unparseable", "The .docx file could not be read");
       }
     }
-    const row = await repo.insert(this.db, {
-      projectId,
-      uploadedBy: claims.sub,
-      filename: file.originalname,
-      fileType,
-      purpose: purpose as FileRow["purpose"],
-      byteSize: file.size,
-      mimeType: file.mimetype,
-      docxExtractedText: extractedText,
-      storagePath: await this.storage.put(file.buffer),
-    });
+    const row = await repo.insertWithChunks(
+      this.db,
+      {
+        projectId,
+        uploadedBy: claims.sub,
+        filename: file.originalname,
+        fileType,
+        purpose: purpose as FileRow["purpose"],
+        byteSize: file.size,
+        mimeType: file.mimetype,
+        docxExtractedText: extractedText,
+        storagePath: await this.storage.put(file.buffer),
+      },
+      buildChunks,
+    );
     return repo.toFileResponse(row);
   }
 
@@ -106,6 +144,35 @@ export class FilesService {
     await repo.remove(this.db, row);
     await this.storage.delete(row.storagePath);
     return { object: "file" as const, file_id: row.fileId, deleted: true };
+  }
+
+  /**
+   * retrieval สำรองสำหรับ ai module — กรอง file_id ก่อน cosine ฝั่ง app คืน top-k (ADR-0025)
+   * `embedding_model` ไม่ตรง config หรือ embedding ว่าง → re-embed ทั้งไฟล์ แล้วบันทึก (backfill lazy)
+   */
+  async retrieve(claims: AccessClaims, fileId: string, query: string): Promise<{ content: string; heading_path: string | null; score: number }[]> {
+    const row = await this.visibleFile(claims, fileId);
+    const rag = config().files.rag;
+    let chunks = await repo.chunksOfFile(this.db, row.fileId);
+    const model = this.embedding.model;
+    if (chunks.length === 0) return [];
+    const stale = chunks.some((c) => c.embedding === null || c.embeddingModel !== model);
+    if (stale) {
+      const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
+      await repo.updateChunkEmbeddings(
+        this.db,
+        chunks.map((c, i) => ({ chunkId: c.chunkId, embedding: vectors[i], embeddingModel: model })),
+      );
+      chunks = chunks.map((c, i) => ({ ...c, embedding: vectors[i], embeddingModel: model }));
+    }
+    const queryVector = await this.embedding.embedQuery(query);
+    const scored = chunks.map((c) => ({
+      content: c.content,
+      heading_path: c.headingPath,
+      score: cosine(queryVector, c.embedding ?? []),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, rag.topK);
   }
 
   private async visibleFile(claims: AccessClaims, fileId: string): Promise<FileRow> {
