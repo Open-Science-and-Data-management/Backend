@@ -38,6 +38,13 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
     const res = host.switchToHttp().getResponse<Response>();
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     if (status >= 500) console.error(exception);
+    // multer โยน PayloadTooLarge — แปลงเป็น code ของ catalog เอง (413 file_too_large)
+    if (status === 413) {
+      res.status(413).json({
+        error: { type: statusType(413), code: "file_too_large", message: "File exceeds the size limit" },
+      });
+      return;
+    }
     if (exception instanceof HttpException) {
       const payload = exception.getResponse();
       const raw = typeof payload === "string" ? { message: payload } : (payload as Record<string, unknown>);

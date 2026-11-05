@@ -103,6 +103,11 @@ export class ProjectsService {
     return { deleted: true };
   }
 
+  /** ใช้ cross-feature (files) — throw เมื่อไม่เห็นโครงการ */
+  async assertVisible(claims: AccessClaims, projectId: string): Promise<void> {
+    await this.findVisible(claims, projectId);
+  }
+
   /** 404 เมื่อไม่มีโครงการ หรือ researcher ไม่ได้เป็นสมาชิก (ซ่อนการมีอยู่) */
   private async findVisible(claims: AccessClaims, projectId: string) {
     const row = (await repo.findById(this.db, projectId)).at(0);
