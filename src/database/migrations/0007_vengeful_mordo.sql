@@ -1,0 +1,1 @@
+ALTER TABLE "dmp_versions" ADD COLUMN "decision_approver" jsonb;

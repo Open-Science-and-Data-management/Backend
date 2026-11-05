@@ -1,6 +1,6 @@
 {
-  "id": "973e277d-8ed0-4af8-b3df-97c6b4b6edd5",
-  "prevId": "ece88aaa-b911-42f2-adcb-7783a238bac7",
+  "id": "2af389f7-a1cf-4792-bf6c-8f22e43be777",
+  "prevId": "973e277d-8ed0-4af8-b3df-97c6b4b6edd5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -271,6 +271,12 @@
         "decision_note": {
           "name": "decision_note",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_approver": {
+          "name": "decision_approver",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

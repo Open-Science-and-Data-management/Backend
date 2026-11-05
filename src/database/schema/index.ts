@@ -200,6 +200,7 @@ export const dmpVersions = pgTable(
     decidedBy: uuid("decided_by").references(() => users.userId),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decisionNote: text("decision_note"),
+    decisionApprover: jsonb("decision_approver"), // approver ณ เวลาตัดสิน {user_id,name,position,mbox} — read model /reviews
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

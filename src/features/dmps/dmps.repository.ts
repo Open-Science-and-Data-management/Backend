@@ -302,13 +302,20 @@ export async function approveTx(
     number: number;
     decidedBy: string;
     note: string | null;
+    approver: { user_id: string; name: string; position: string; mbox: string | null };
   },
 ): Promise<{ dmp: DmpRow; version: VersionRow }> {
   return db.transaction(async (tx) => {
     // CAS บน status pending — ตัดสินซ้ำ → 0 rows
     const decided = await tx
       .update(dmpVersions)
-      .set({ status: "approved", decidedBy: input.decidedBy, decidedAt: new Date(), decisionNote: input.note })
+      .set({
+        status: "approved",
+        decidedBy: input.decidedBy,
+        decidedAt: new Date(),
+        decisionNote: input.note,
+        decisionApprover: input.approver,
+      })
       .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, input.number), eq(dmpVersions.status, "pending")))
       .returning();
     const version = decided.at(0);
@@ -437,12 +444,18 @@ export async function approveTx(
 /** ตัดสิน reject — first submission กลับ draft; revision: version in force คงเดิม (ADR-0021) */
 export async function rejectTx(
   db: Db,
-  input: { dmpId: string; number: number; decidedBy: string; note: string },
+  input: { dmpId: string; number: number; decidedBy: string; note: string; approver: { user_id: string; name: string; position: string; mbox: string | null } },
 ): Promise<{ dmp: DmpRow; version: VersionRow }> {
   return db.transaction(async (tx) => {
     const decided = await tx
       .update(dmpVersions)
-      .set({ status: "rejected", decidedBy: input.decidedBy, decidedAt: new Date(), decisionNote: input.note })
+      .set({
+        status: "rejected",
+        decidedBy: input.decidedBy,
+        decidedAt: new Date(),
+        decisionNote: input.note,
+        decisionApprover: input.approver,
+      })
       .where(and(eq(dmpVersions.dmpId, input.dmpId), eq(dmpVersions.number, input.number), eq(dmpVersions.status, "pending")))
       .returning();
     const version = decided.at(0);

@@ -43,6 +43,13 @@
       "when": 1793898650342,
       "tag": "0006_material_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793899256035,
+      "tag": "0007_vengeful_mordo",
+      "breakpoints": true
     }
   ]
 }

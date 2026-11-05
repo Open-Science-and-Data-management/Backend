@@ -535,7 +535,7 @@ export class DmpsService {
     };
     try {
       if (action === "approve") {
-        const { version } = await repo.approveTx(this.db, { dmpId, number, decidedBy: claims.sub, note });
+        const { version } = await repo.approveTx(this.db, { dmpId, number, decidedBy: claims.sub, note, approver });
         return {
           ...toVersionResponse(version),
           approver,
@@ -545,7 +545,7 @@ export class DmpsService {
       }
       // note ไม่เป็น null แล้ว — guard ด้านบนคืน 400 ก่อนถึงบรรทัดนี้ (reject เท่านั้น)
       if (note === null) throw new ApiError(400, "note_required", "A note is required");
-      const { dmp, version } = await repo.rejectTx(this.db, { dmpId, number, decidedBy: claims.sub, note });
+      const { dmp, version } = await repo.rejectTx(this.db, { dmpId, number, decidedBy: claims.sub, note, approver });
       return { ...toVersionResponse(version), approver, plan_status: dmp.status };
     } catch (error) {
       if (error instanceof repo.NotPendingError) {
