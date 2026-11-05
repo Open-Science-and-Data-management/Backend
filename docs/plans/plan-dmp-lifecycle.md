@@ -32,12 +32,12 @@
   - Deps: 2
 
 ### Phase 2: Lifecycle ที่เหลือ
-- [ ] **Task 4: restore/archive/discard/ลบโครงการ** — restore เวอร์ชัน pending ไม่ได้; archive ปฏิเสธขณะมีผล; ลบโครงการที่มีแผนปฏิเสธ
+- [x] **Task 4: restore/archive/discard/ลบโครงการ** — restore เวอร์ชัน pending ไม่ได้; archive ปฏิเสธขณะมีผล; ลบโครงการที่มีแผนปฏิเสธ
   - Acceptance: e2e flows #10, #13 เขียว
   - Verify: `pnpm test -- tests/e2e/lifecycle` (M)
   - Files: `src/features/dmps/**`, `src/features/projects/**` (S–M)
   - Deps: 3
-- [ ] **Task 5: reviews read model** — `GET /reviews` (global queue, `days_waiting`, `changes_summary`, filter `decided_by=me`, sort)
+- [x] **Task 5: reviews read model** — `GET /reviews` (global queue, `days_waiting`, `changes_summary`, filter `decided_by=me`, sort)
   - Acceptance: e2e มุมกรรมการของ flow #6 เขียว — รูปร่างตรง contract, pagination Stripe v1
   - Verify: `pnpm test -- tests/e2e/reviews` (S)
   - Files: `src/features/reviews/**` (S)
