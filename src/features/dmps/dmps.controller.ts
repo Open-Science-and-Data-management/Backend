@@ -46,4 +46,14 @@ export class DmpsController {
   discardDraft(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string) {
     return this.dmps.discardDraft(user, dmpId);
   }
+
+  @Post(":dmpId/submit")
+  submit(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.submit(user, dmpId, body);
+  }
+
+  @Post(":dmpId/finalize")
+  finalize(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.finalize(user, dmpId, body);
+  }
 }

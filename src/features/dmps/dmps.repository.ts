@@ -1,7 +1,7 @@
 // dmps repository — Drizzle เดียวต่อ flow; snake_case response ตาม FE contract
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { dmpVersions, dmps, projects, users } from "@/database/schema/index.js";
+import { dmpVersions, dmps, notifications, projects, tasks, users } from "@/database/schema/index.js";
 import type * as schema from "@/database/schema/index.js";
 
 export type Db = NodePgDatabase<typeof schema>;
@@ -113,6 +113,159 @@ export async function resetDraftToSnapshot(db: Db, dmpId: string, snapshot: unkn
     .set({ draft: snapshot, draftRevision: sql`${dmps.draftRevision} + 1`, updatedAt: new Date() })
     .where(eq(dmps.dmpId, dmpId))
     .returning();
+}
+
+/** ส่งอนุมัติ (institutional) — freeze mode + version pending ใน tx เดียว;
+ *  partial unique (dmp_versions_one_pending_uq / dmp_versions_dmp_number_uq) บังคับขนานเอง (QS-1) */
+export async function submitTx(
+  db: Db,
+  input: { dmpId: string; snapshot: unknown; title: string; planMode: "institutional"; submittedBy: string },
+): Promise<{ dmp: DmpRow; version: VersionRow }> {
+  return db.transaction(async (tx) => {
+    const maxNumber =
+      (
+        await tx
+          .select({ n: sql<number>`coalesce(max(${dmpVersions.number}), 0)::int` })
+          .from(dmpVersions)
+          .where(eq(dmpVersions.dmpId, input.dmpId))
+      ).at(0)?.n ?? 0;
+    const inserted = await tx
+      .insert(dmpVersions)
+      .values({
+        dmpId: input.dmpId,
+        number: maxNumber + 1,
+        status: "pending",
+        snapshot: input.snapshot,
+        changes: [],
+        editType: "major",
+        submittedBy: input.submittedBy,
+        submittedAt: new Date(),
+      })
+      .returning();
+    const version = inserted.at(0);
+    if (version === undefined) throw new Error("version disappeared after insert");
+    const dmp = (
+      await tx
+        .update(dmps)
+        .set({ status: "pending", planMode: input.planMode, title: input.title, updatedAt: new Date() })
+        .where(eq(dmps.dmpId, input.dmpId))
+        .returning()
+    ).at(0);
+    if (dmp === undefined) throw new Error("dmp disappeared during submit");
+    return { dmp, version };
+  });
+}
+
+export interface TaskInsert {
+  dmpId: string;
+  datasetId: string | null;
+  title: string;
+  details: string;
+  lifecycleStage: "collect" | "process" | "analyse" | "preserve" | "share";
+  priority: "low" | "medium" | "high";
+  sourceVersionId: string;
+}
+
+/** finalize (independent) — version ออกผลทันที + task generator + notification ใน tx เดียว (หมวด 4.4) */
+export async function finalizeTx(
+  db: Db,
+  input: {
+    dmpId: string;
+    snapshot: unknown;
+    title: string;
+    finalizedBy: string;
+    tasks: (versionId: string) => TaskInsert[];
+    notification: { userId: string; title: string; message: string | null; link: string | null };
+  },
+): Promise<{ dmp: DmpRow; version: VersionRow }> {
+  return db.transaction(async (tx) => {
+    const maxNumber =
+      (
+        await tx
+          .select({ n: sql<number>`coalesce(max(${dmpVersions.number}), 0)::int` })
+          .from(dmpVersions)
+          .where(eq(dmpVersions.dmpId, input.dmpId))
+      ).at(0)?.n ?? 0;
+    const number = maxNumber + 1;
+    const inserted = await tx
+      .insert(dmpVersions)
+      .values({
+        dmpId: input.dmpId,
+        number,
+        status: "approved",
+        snapshot: input.snapshot,
+        changes: [],
+        editType: "major",
+        submittedBy: input.finalizedBy,
+        submittedAt: new Date(),
+        decidedBy: input.finalizedBy, // author เป็น approver ของตัวเอง (independent)
+        decidedAt: new Date(),
+      })
+      .returning();
+    const version = inserted.at(0);
+    if (version === undefined) throw new Error("version disappeared after insert");
+    const taskRows = input.tasks(version.versionId);
+    if (taskRows.length > 0) {
+      await tx.insert(tasks).values(
+        taskRows.map((t) => ({
+          dmpId: t.dmpId,
+          datasetId: t.datasetId,
+          title: t.title,
+          details: t.details,
+          lifecycleStage: t.lifecycleStage,
+          priority: t.priority,
+          sourceVersionId: t.sourceVersionId,
+        })),
+      );
+    }
+    const dmp = (
+      await tx
+        .update(dmps)
+        .set({
+          status: "approved",
+          planMode: "independent",
+          title: input.title,
+          activeVersion: number,
+          tasksGenerated: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(dmps.dmpId, input.dmpId))
+        .returning()
+    ).at(0);
+    if (dmp === undefined) throw new Error("dmp disappeared during finalize");
+    await tx.insert(notifications).values({
+      userId: input.notification.userId,
+      type: "dmp_finalized",
+      title: input.notification.title,
+      message: input.notification.message,
+      link: input.notification.link,
+      dmpId: input.dmpId,
+    });
+    return { dmp, version };
+  });
+}
+
+/** committee/chief ทุกคน — ผู้รับ review_requested */
+export function reviewers(db: Db) {
+  return db
+    .select({ userId: users.userId })
+    .from(users)
+    .where(inArray(users.role, ["committee", "chief"]));
+}
+
+export async function addNotifications(
+  db: Db,
+  rows: {
+    userId: string;
+    type: "review_requested" | "dmp_submitted";
+    title: string;
+    message: string | null;
+    link: string | null;
+    dmpId: string;
+  }[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await db.insert(notifications).values(rows);
 }
 
 /** plan_mode ยังไม่ freeze → ตามโครงการ (ใช้ตรวจ committee visibility ของแผน draft) */

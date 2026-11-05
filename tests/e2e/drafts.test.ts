@@ -30,8 +30,9 @@ const AUTHOR = {
 };
 const OTHER = { ...AUTHOR, email: "e2e-dmp-o@example.edu", username: "e2e-dmp-o" };
 const COMMITTEE = { ...AUTHOR, email: "e2e-dmp-m@example.edu", username: "e2e-dmp-m" };
+const CITIZEN = { ...AUTHOR, account_type: "citizen", email: "e2e-dmp-c@example.edu", username: "e2e-dmp-c" };
 
-const usernames = ["e2e-dmp-a", "e2e-dmp-o", "e2e-dmp-m"];
+const usernames = ["e2e-dmp-a", "e2e-dmp-o", "e2e-dmp-m", "e2e-dmp-c"];
 
 async function cleanup() {
   const ids = (await db.select({ userId: users.userId }).from(users).where(inArray(users.username, usernames))).map((r) => r.userId);
@@ -77,6 +78,7 @@ describe.skipIf(!dbReady)("dmps draft e2e — flow #4", () => {
   let authorToken: string;
   let otherToken: string;
   let committeeToken: string;
+  let citizenToken: string;
   let projectId: string;
   let dmpId: string;
 
@@ -104,6 +106,7 @@ describe.skipIf(!dbReady)("dmps draft e2e — flow #4", () => {
       .post("/auth/sessions")
       .send({ username: "e2e-dmp-m", password: "passw0rd8" });
     committeeToken = reSign.body.access_token;
+    citizenToken = await signUp(CITIZEN);
 
     const project = await request(app.getHttpServer())
       .post("/projects")
@@ -244,5 +247,136 @@ describe.skipIf(!dbReady)("dmps draft e2e — flow #4", () => {
       .set("Authorization", `Bearer ${authorToken}`);
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("never_submitted");
+  });
+
+  it("submit — 422 plan_incomplete เมื่อ checklist ยังไม่ผ่าน (พร้อม items)", async () => {
+    // contact ไม่มี email → กฎ contact_email_required
+    const noEmail = { ...VALID_DRAFT, contributor: [{ name: "Aran", surname: "Saelim", role: "Principal investigator", is_contact: true }] };
+    const saved = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 2, draft: noEmail });
+    expect(saved.status).toBe(200);
+    const revision = saved.body.draft_revision;
+
+    const bad = await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/submit`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: revision });
+    expect(bad.status).toBe(422);
+    expect(bad.body.error.code).toBe("plan_incomplete");
+    expect(Array.isArray(bad.body.error.items)).toBe(true);
+    expect(bad.body.error.items.length).toBeGreaterThan(0);
+  });
+
+  it("submit — draft_revision เก่า → 409 draft_conflict; institutional ผ่าน → pending + version 1 + notification", async () => {
+    // กลับไป draft ที่ผ่าน checklist
+    const saved = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 3, draft: VALID_DRAFT });
+    expect(saved.status).toBe(200);
+    const revision = saved.body.draft_revision;
+
+    const stale = await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/submit`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 99 });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe("draft_conflict");
+
+    const res = await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/submit`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: revision });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("pending");
+    expect(res.body.plan_mode).toBe("institutional");
+    expect(res.body.versions).toHaveLength(1);
+    expect(res.body.versions[0].status).toBe("pending");
+    expect(res.body.versions[0].number).toBe(1);
+
+    const notes = await db
+      .select({ type: sql<string>`type` })
+      .from(sql`notifications`)
+      .where(sql`dmp_id = ${dmpId}`);
+    const types = notes.map((n) => n.type).sort();
+    expect(types).toContain("dmp_submitted");
+    expect(types).toContain("review_requested");
+  });
+
+  it("QS-1 — submit ขนาน 2 request: ตัวที่สองถูก Postgres ปฏิเสธ (partial unique)", async () => {
+    // แผนใหม่ในโครงการเดียวกัน + draft ครบ + revision ตรง → ยิง submit พร้อมกันสองทาง
+    const made = await request(app.getHttpServer())
+      .post("/dmps")
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ project_id: projectId });
+    const dmp2 = made.body.dmp_id;
+    const saved = await request(app.getHttpServer())
+      .put(`/dmps/${dmp2}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 0, draft: VALID_DRAFT });
+    expect(saved.status).toBe(200);
+    const revision = saved.body.draft_revision;
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post(`/dmps/${dmp2}/submit`).set("Authorization", `Bearer ${authorToken}`).send({ draft_revision: revision }),
+      request(app.getHttpServer()).post(`/dmps/${dmp2}/submit`).set("Authorization", `Bearer ${authorToken}`).send({ draft_revision: revision }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 409]);
+    expect([a.body.error?.code, b.body.error?.code]).toContain("already_submitted");
+    const check = await request(app.getHttpServer())
+      .get(`/dmps/${dmp2}?include=versions`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(check.body.versions).toHaveLength(1);
+  });
+
+  it("finalize — independent: ออกผลทันที + tasks ชุดแรกครบตาม STAGE_PLAN (flow #7)", async () => {
+    // citizen → independent plan ในโครงการของตัวเอง
+    const project = await request(app.getHttpServer())
+      .post("/projects")
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .send({ project_name: "Independent project" });
+    const citizenProjectId = project.body.project_id;
+    const made = await request(app.getHttpServer())
+      .post("/dmps")
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .send({ project_id: citizenProjectId });
+    const dmpC = made.body.dmp_id;
+    const saved = await request(app.getHttpServer())
+      .put(`/dmps/${dmpC}/draft`)
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .send({ draft_revision: 0, draft: VALID_DRAFT });
+    const revision = saved.body.draft_revision;
+
+    const wrongMode = await request(app.getHttpServer())
+      .post(`/dmps/${dmpC}/submit`)
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .send({ draft_revision: revision });
+    expect(wrongMode.status).toBe(409);
+    expect(wrongMode.body.error.code).toBe("plan_is_independent");
+
+    const res = await request(app.getHttpServer())
+      .post(`/dmps/${dmpC}/finalize`)
+      .set("Authorization", `Bearer ${citizenToken}`)
+      .send({ draft_revision: revision });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("approved");
+    expect(res.body.plan_mode).toBe("independent");
+    expect(res.body.active_version).toBe(1);
+    expect(res.body.versions[0].status).toBe("approved");
+
+    // 5 tasks ต่อ output (open access ไม่ตัด share)
+    const taskRows = await db.select({ stage: sql<string>`lifecycle_stage`, dmp: sql<string>`dmp_id` }).from(sql`tasks`).where(sql`dmp_id = ${dmpC}`);
+    expect(taskRows.map((t) => t.stage).sort()).toEqual(["analyse", "collect", "preserve", "process", "share"]);
+
+    // institutional ตัวอื่น finalize ไม่ได้
+    const wrongWay = await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/finalize`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 4 });
+    expect(wrongWay.status).toBe(409);
+    expect(wrongWay.body.error.code).toBe("plan_is_institutional");
   });
 });

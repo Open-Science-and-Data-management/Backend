@@ -213,7 +213,7 @@ export const tasks = pgTable("tasks", {
   dmpId: uuid("dmp_id")
     .notNull()
     .references(() => dmps.dmpId, { onDelete: "cascade" }),
-  datasetId: uuid("dataset_id"), // id ใน draft — ไม่ใช่ FK ตาราง (draft เป็น JSONB)
+  datasetId: text("dataset_id"), // id ใน draft — FE กำหนดเอง (เช่น "ds-soil-reads") ไม่ใช่ uuid และไม่ใช่ FK
   sourceVersionId: uuid("source_version_id").references(() => dmpVersions.versionId),
   title: varchar("title", { length: 500 }).notNull(),
   details: text("details"),

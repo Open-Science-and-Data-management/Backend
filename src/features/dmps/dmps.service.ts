@@ -2,6 +2,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { validateDraft } from "@/shared/domain-engine/validate-draft.js";
+import { generateTasks } from "@/shared/domain-engine/task-generator.js";
 import { dmpDraftSchema } from "@/shared/contracts/dmp.js";
 import { MADMP_SCHEMA_VERSION } from "@/shared/contracts/madmp-vocabularies.js";
 import { ApiError, fieldInvalid } from "@/shared/http/error-envelope.js";
@@ -229,6 +230,150 @@ export class DmpsService {
     return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
   }
 
+  /** submit (institutional) — ผ่าน dmpSchema ครบ + draft_revision ตรง → version 1 pending (flow #5) */
+  async submit(claims: AccessClaims, dmpId: string, body: unknown): Promise<DmpResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const revision = parseRevision(body);
+    const draft = (row.dmp.draft ?? {}) as Record<string, unknown>;
+    if (revision !== row.dmp.draftRevision) {
+      throw new ApiError(409, "draft_conflict", "The draft changed after it was reviewed", undefined, {
+        draft,
+        draft_revision: row.dmp.draftRevision,
+      });
+    }
+    const versions = await repo.listVersions(this.db, dmpId);
+    if (versions.length > 0) {
+      throw new ApiError(409, "already_submitted", "The plan already has a version; changes go through revisions");
+    }
+    const mode = row.dmp.planMode ?? (await repo.projectPlanMode(this.db, row.dmp.projectId)).at(0)?.mode;
+    if (mode !== "institutional") {
+      throw new ApiError(409, "plan_is_independent", "Independent plans are finalized by their author");
+    }
+    const check = validateDraft(draft);
+    if (!check.ok) {
+      const first = check.errors.at(0);
+      if (first === undefined) throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items");
+      throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items", first.path, {
+        items: check.errors.map((e) => ({ label: e.message, section: e.path })),
+      });
+    }
+    const title = typeof draft.title === "string" ? draft.title : "";
+    try {
+      const { dmp } = await repo.submitTx(this.db, {
+        dmpId,
+        snapshot: draft,
+        title,
+        planMode: "institutional",
+        submittedBy: claims.sub,
+      });
+      await repo.addNotifications(this.db, [
+        {
+          userId: claims.sub,
+          type: "dmp_submitted",
+          title: `ส่งแผน "${dmp.title}" เข้าสู่การพิจารณา`,
+          message: null,
+          link: `/dmps/${dmpId}`,
+          dmpId,
+        },
+      ]);
+      const reviewerIds = await repo.reviewers(this.db);
+      await repo.addNotifications(
+        this.db,
+        reviewerIds.map((r) => ({
+          userId: r.userId,
+          type: "review_requested" as const,
+          title: `มีแผนรอพิจารณา: "${dmp.title}"`,
+          message: null,
+          link: `/dmps/${dmpId}`,
+          dmpId,
+        })),
+      );
+      return await this.toResponse(dmp, row.author, { include: ["versions"], includeDraft: true, snapshot: true });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        // QS-1 — submit ขนาน: Postgres ปฏิเสธตัวที่สองเอง
+        throw new ApiError(409, "already_submitted", "The plan already has a submission");
+      }
+      throw error;
+    }
+  }
+
+  /** finalize (independent) — version ออกผล + tasks ชุดแรกใน tx เดียว (flow #7) */
+  async finalize(claims: AccessClaims, dmpId: string, body: unknown): Promise<DmpResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const revision = parseRevision(body);
+    const draft = (row.dmp.draft ?? {}) as Record<string, unknown>;
+    if (revision !== row.dmp.draftRevision) {
+      throw new ApiError(409, "draft_conflict", "The draft changed after it was reviewed", undefined, {
+        draft,
+        draft_revision: row.dmp.draftRevision,
+      });
+    }
+    const mode = row.dmp.planMode ?? (await repo.projectPlanMode(this.db, row.dmp.projectId)).at(0)?.mode;
+    if (mode !== "independent") {
+      throw new ApiError(409, "plan_is_institutional", "Institutional plans are decided by the committee");
+    }
+    const check = validateDraft(draft);
+    if (!check.ok) {
+      const first = check.errors.at(0);
+      if (first === undefined) throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items");
+      throw new ApiError(422, "plan_incomplete", "The submission checklist has unmet items", first.path, {
+        items: check.errors.map((e) => ({ label: e.message, section: e.path })),
+      });
+    }
+    const outputs = Array.isArray(draft.dataset) ? draft.dataset : [];
+    const outputsInForce = outputs
+      .filter((o): o is Record<string, unknown> => o !== null && typeof o === "object")
+      .map((o) => ({
+        dataset_id: typeof o.dataset_id === "string" ? o.dataset_id : "",
+        title: typeof o.title === "string" ? o.title : "",
+        type: typeof o.type === "string" ? o.type : "other",
+        access: typeof o.access === "string" ? o.access : "closed",
+      }));
+    const generated = generateTasks(outputsInForce);
+    const title = typeof draft.title === "string" ? draft.title : "";
+    try {
+      const { dmp } = await repo.finalizeTx(this.db, {
+        dmpId,
+        snapshot: draft,
+        title,
+        finalizedBy: claims.sub,
+        tasks: (versionId) =>
+          generated.map((t) => ({
+            dmpId,
+            datasetId: t.dataset_id,
+            title: t.title,
+            details: t.details,
+            lifecycleStage: t.lifecycle_stage,
+            priority: t.priority,
+            sourceVersionId: versionId,
+          })),
+        notification: {
+          userId: claims.sub,
+          title: `แผน "${title}" มีผลแล้ว (finalize)`,
+          message: null,
+          link: `/dmps/${dmpId}`,
+        },
+      });
+      return await this.toResponse(dmp, row.author, { include: ["versions"], includeDraft: true, snapshot: true });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ApiError(409, "already_submitted", "The plan already has a submission");
+      }
+      throw error;
+    }
+  }
+
+  /** author-only gate ของ use-case submit/finalize — แผนต้องเป็นของผู้เรียก */
+  private async findOwnedDraft(claims: AccessClaims, dmpId: string) {
+    if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "Only researchers submit plans");
+    const row = (await repo.findById(this.db, dmpId)).at(0);
+    if (row === undefined || row.dmp.createdBy !== claims.sub) {
+      throw new ApiError(404, "dmp_not_found", "No plan with that id");
+    }
+    return row;
+  }
+
   /** ร่าง plan response — content top-level อ่านจาก draft, review_snapshot = pending → in force → draft */
   private async toResponse(
     dmp: DmpRow,
@@ -305,6 +450,19 @@ function asArray(raw?: string | string[]): string[] {
 function valuesEqual(incoming: unknown, stored: unknown): boolean {
   if (incoming instanceof Date && typeof stored === "string") return incoming.toISOString().slice(0, 10) === stored;
   return JSON.stringify(incoming ?? null) === JSON.stringify(stored ?? null);
+}
+
+/** draft_revision จาก body — ขาด/ผิดรูป → 400 field_invalid */
+function parseRevision(body: unknown): number {
+  const result = z.object({ draft_revision: z.number().int().nonnegative() }).safeParse(body);
+  if (!result.success) throw fieldInvalid(result.error);
+  return result.data.draft_revision;
+}
+
+/** Postgres unique violation (QS-1 — สถานะขัดกันให้ DB ตัดสิน) */
+function isUniqueViolation(error: unknown): boolean {
+  const cause = error instanceof Error ? (error as { cause?: { code?: string } }).cause : undefined;
+  return cause?.code === "23505";
 }
 
 function parseLimit(raw?: string): number {
