@@ -47,6 +47,21 @@ export class DmpsController {
     return this.dmps.discardDraft(user, dmpId);
   }
 
+  @Post(":dmpId/draft/restore")
+  restore(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string, @Body() body: unknown) {
+    return this.dmps.restore(user, dmpId, body);
+  }
+
+  @Post(":dmpId/archive")
+  archive(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string) {
+    return this.dmps.archive(user, dmpId);
+  }
+
+  @Post(":dmpId/unarchive")
+  unarchive(@CurrentUser() user: AccessClaims, @Param("dmpId") dmpId: string) {
+    return this.dmps.unarchive(user, dmpId);
+  }
+
   @Post(":dmpId/versions/:number/approve")
   approve(
     @CurrentUser() user: AccessClaims,

@@ -36,6 +36,13 @@
       "when": 1793897548853,
       "tag": "0004_rich_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793898650342,
+      "tag": "0006_material_the_watchers",
+      "breakpoints": true
     }
   ]
 }

@@ -172,6 +172,7 @@ export const dmps = pgTable("dmps", {
   activeVersion: integer("active_version"),
   tasksGenerated: boolean("tasks_generated").notNull().default(false),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
+  restoredFrom: integer("restored_from"), // restore เวอร์ชันอื่น → จดไว้จนกว่า edit ถัดไปจะจดลง minor_edits
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

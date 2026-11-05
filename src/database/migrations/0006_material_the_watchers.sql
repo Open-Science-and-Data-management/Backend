@@ -1,0 +1,1 @@
+ALTER TABLE "dmps" ADD COLUMN "restored_from" integer;

@@ -112,11 +112,31 @@ export function updateDraft(
     .returning();
 }
 
-/** discard — กลับไป snapshot ที่มีอยู่ (pending → in force → ล่าสุด); revision ก้าวต่อเพื่อกัน race */
-export async function resetDraftToSnapshot(db: Db, dmpId: string, snapshot: unknown): Promise<DmpRow[]> {
+/** discard/restore — กลับไป snapshot; revision ก้าวต่อเพื่อกัน race;
+ * restoredFrom จดเมื่อ restore เวอร์ชันอื่น (ไม่ใช่ in force) — edit ถัดไปจดลง minor_edits แล้วเคลียร์ */
+export async function resetDraftToSnapshot(
+  db: Db,
+  dmpId: string,
+  snapshot: unknown,
+  restoredFrom?: number | null,
+): Promise<DmpRow[]> {
   return db
     .update(dmps)
-    .set({ draft: snapshot, draftRevision: sql`${dmps.draftRevision} + 1`, updatedAt: new Date() })
+    .set({
+      draft: snapshot,
+      draftRevision: sql`${dmps.draftRevision} + 1`,
+      restoredFrom: restoredFrom ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(dmps.dmpId, dmpId))
+    .returning();
+}
+
+/** archive/unarchive — ไม่มีทางลบแผน (preservation); archived_at เท่านั้น */
+export function setArchived(db: Db, dmpId: string, archived: boolean): Promise<DmpRow[]> {
+  return db
+    .update(dmps)
+    .set({ archivedAt: archived ? new Date() : null, updatedAt: new Date() })
     .where(eq(dmps.dmpId, dmpId))
     .returning();
 }
@@ -508,7 +528,10 @@ export async function revisionTx(
     if (version === undefined) throw new Error("version disappeared after insert");
 
     const dmp = (
-      await tx.update(dmps).set({ status: "pending", updatedAt: new Date() }).where(eq(dmps.dmpId, input.dmpId)).returning()
+      await tx
+        .update(dmps)
+        .set({ status: "pending", updatedAt: new Date(), restoredFrom: null }) // revision จด changes เองครบ
+        .where(eq(dmps.dmpId, input.dmpId)).returning()
     ).at(0);
     if (dmp === undefined) throw new Error("dmp update failed during revision");
 
@@ -542,6 +565,8 @@ export async function minorEditsTx(
   input: { dmpId: string; draft: DmpDraftInput; activeVersion: number; hasPending: boolean },
 ): Promise<VersionRow> {
   return db.transaction(async (tx) => {
+    const current = (await tx.select().from(dmps).where(eq(dmps.dmpId, input.dmpId)).limit(1)).at(0);
+    if (current === undefined) throw new Error("dmp disappeared during minor edits");
     const inForce = (
       await tx
         .select()
@@ -557,7 +582,11 @@ export async function minorEditsTx(
     // ไม่มี pending → major ต้องยิง revision แทน
     if (!input.hasPending && classify(changes) === "major") throw new EditsIncludeMajorError();
     const folded = foldMinor(inForceSnapshot, input.draft, changes);
-    const minorEdits = [...((inForce.minorEdits ?? []) as FieldChange[]), ...folded.minorEdits];
+    // restore เวอร์ชันอื่นไว้ → จด restored_from ทุก entry ที่ fold ครั้งนี้ แล้วเคลียร์
+    const restoredFrom = current.restoredFrom;
+    const newEdits = restoredFrom === null ? folded.minorEdits : folded.minorEdits.map((e) => ({ ...e, restored_from: restoredFrom }));
+    const minorEdits = [...((inForce.minorEdits ?? []) as FieldChange[]), ...newEdits];
+    await tx.update(dmps).set({ restoredFrom: null }).where(eq(dmps.dmpId, input.dmpId));
     const updated = await tx
       .update(dmpVersions)
       .set({ snapshot: folded.snapshot, minorEdits })

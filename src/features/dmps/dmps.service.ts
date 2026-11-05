@@ -51,6 +51,7 @@ export interface DmpResponse {
   active_version: number | null;
   created_at: Date;
   updated_at: Date;
+  archived_at: Date | null;
   researcher: { user_id: string; name: string };
   review_snapshot?: Record<string, unknown>;
   draft?: Record<string, unknown>;
@@ -230,6 +231,52 @@ export class DmpsService {
     const snapshot = pending?.snapshot ?? inForce?.snapshot ?? versions.at(0)?.snapshot ?? {};
     const updated = (await repo.resetDraftToSnapshot(this.db, dmpId, snapshot)).at(0);
     if (updated === undefined) throw new ApiError(500, "internal_error", "Discard failed");
+    return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
+  }
+
+  /** restore — โหลด snapshot ของเวอร์ชันเข้า working draft; pending restore ไม่ได้;
+   * restore in force = ทิ้ง edit ไม่จด; เวอร์ชันอื่น = แก้ธรดา + จด restored_from (flow #10) */
+  async restore(claims: AccessClaims, dmpId: string, body: unknown): Promise<DmpResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const parsed = z
+      .object({ number: z.number().int().min(1), draft_revision: z.number().int().nonnegative() })
+      .safeParse(body);
+    if (!parsed.success) throw fieldInvalid(parsed.error);
+    const { number, draft_revision: revision } = parsed.data;
+    if (revision !== row.dmp.draftRevision) {
+      throw new ApiError(409, "draft_conflict", "The draft changed since your last read", undefined, {
+        draft: row.dmp.draft,
+        draft_revision: row.dmp.draftRevision,
+      });
+    }
+    const versions = await repo.listVersions(this.db, dmpId);
+    const version = versions.find((v) => v.number === number);
+    if (version === undefined) throw new ApiError(404, "version_not_found", "No version with that number");
+    if (version.status === "pending") {
+      throw new ApiError(409, "version_pending", "That version is still waiting on a decision");
+    }
+    const inForce = number === row.dmp.activeVersion;
+    const updated = (await repo.resetDraftToSnapshot(this.db, dmpId, version.snapshot, inForce ? null : number)).at(0);
+    if (updated === undefined) throw new ApiError(500, "internal_error", "Restore failed");
+    return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
+  }
+
+  /** archive — เก็บแผนไว้ข้างนอก; มีผลอยู่ปฏิเสธ (tasks/evidence เป็นหลักฐานงาน — preservation) */
+  async archive(claims: AccessClaims, dmpId: string): Promise<DmpResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    if (row.dmp.activeVersion !== null) {
+      throw new ApiError(409, "plan_in_force", "A plan in force can't be archived");
+    }
+    const updated = (await repo.setArchived(this.db, dmpId, true)).at(0);
+    if (updated === undefined) throw new ApiError(500, "internal_error", "Archive failed");
+    return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
+  }
+
+  /** unarchive — นำกลับมาไม่เปลี่ยนแปลง */
+  async unarchive(claims: AccessClaims, dmpId: string): Promise<DmpResponse> {
+    const row = await this.findOwnedDraft(claims, dmpId);
+    const updated = (await repo.setArchived(this.db, dmpId, false)).at(0);
+    if (updated === undefined) throw new ApiError(500, "internal_error", "Unarchive failed");
     return this.toResponse(updated, row.author, { include: [], includeDraft: true, snapshot: true });
   }
 
@@ -542,6 +589,7 @@ export class DmpsService {
       active_version: dmp.activeVersion,
       created_at: dmp.createdAt,
       updated_at: dmp.updatedAt,
+      archived_at: dmp.archivedAt,
       researcher: { user_id: author.userId, name: `${author.name} ${author.surname}`.trim() },
     };
     if (opts.snapshot === true) {
