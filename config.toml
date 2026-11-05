@@ -10,6 +10,11 @@ _appliesTo = ["src/features/auth/"]
 accessTokenTtlMinutes = 15
 refreshTokenTtlDays = 14
 
+[auth.argon2]                  # ADR-0029 — OWASP minimum
+memoryCostKiB = 19456
+timeCost = 2
+parallelism = 1
+
 [files]                        # src/features/files/
 _appliesTo = ["src/features/files/"]
 maxFileSizeMb = 25
