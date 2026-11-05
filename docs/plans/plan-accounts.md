@@ -14,29 +14,29 @@
 ## Task List
 
 ### Phase 1: Users
-- [ ] **Task 1: users module + sign-up** — NestJS module, repository, service, `POST /users` (researcher only), `GET /users/username-available`, argon2id hash/verify
+- [x] **Task 1: users module + sign-up** — NestJS module, repository, service, `POST /users` (researcher only), `GET /users/username-available`, argon2id hash/verify
   - Acceptance: sign-up สร้าง users + credentials row; บทบาทอื่นขอสมัคร → ปฏิเสธ; email/username normalize (lowercase+trim) + unique → `409 username_taken`/`email_taken`
   - Verify: `pnpm test -- tests/unit/users` + integration (hash round-trip, uniqueness ที่ระดับ DB)
   - Files: `src/features/users/**`, `tests/unit/users/`, `tests/integration/users.ts` (M)
   - Deps: foundation ทั้งหมด
-- [ ] **Task 2: profile endpoints** — `GET/PATCH /users/me` (role/username/quota แก้ไม่ได้)
+- [x] **Task 2: profile endpoints** — `GET/PATCH /users/me` (role/username/quota แก้ไม่ได้)
   - Acceptance: PATCH เปลี่ยนเฉพาะ field ที่อนุญาต; ผู้ไม่ sign-in → `not_signed_in`
   - Verify: `pnpm test -- tests/unit/users` (S)
   - Files: `src/features/users/**` (S)
   - Deps: 1
 
 ### Phase 2: Auth
-- [ ] **Task 3: sign-in + access token** — `POST /auth/sessions` → JWT 15 นาที; `JWT_SECRET` จาก env; TTL จาก `config.toml`
+- [x] **Task 3: sign-in + access token** — `POST /auth/sessions` → JWT 15 นาที; `JWT_SECRET` จาก env; TTL จาก `config.toml`
   - Acceptance: credential ผิด → 401; สำเร็จ → access token + refresh cookie
   - Verify: unit + รอ e2e รวม Task 5 (S)
   - Files: `src/features/auth/**` (M)
   - Deps: 1
-- [ ] **Task 4: refresh rotation + reuse detection + sign-out** — httpOnly cookie, rotating TTL 14 วัน, token-family table ตาม arc42 `refresh_tokens`
+- [x] **Task 4: refresh rotation + reuse detection + sign-out** — httpOnly cookie, rotating TTL 14 วัน, token-family table ตาม arc42 `refresh_tokens`
   - Acceptance: refresh เก่าซ้ำ → revoke ทั้ง family (ทุก session ของ user ตาย); sign-out revoke session ปัจจุบัน
   - Verify: `pnpm test -- tests/integration/auth` (M)
   - Files: `src/features/auth/**` (M)
   - Deps: 3
-- [ ] **Task 5: global guard + e2e flows #1, #15** — guard ครอบทุก endpoint; 401 `token_expired` → `POST /auth/refresh` → retry; เปิด CI stage 1 (lint+unit บน GitHub Actions)
+- [x] **Task 5: global guard + e2e flows #1, #15** — guard ครอบทุก endpoint; 401 `token_expired` → `POST /auth/refresh` → retry; เปิด CI stage 1 (lint+unit บน GitHub Actions)
   - Acceptance: e2e flow #1 (sign-up/sign-in) + #15 (refresh retry) เขียวต่อ Postgres จริง; CI เขียว
   - Verify: `pnpm test -- tests/e2e/auth`, ดูผล CI run
   - Files: `src/features/auth/**` (guard), `.github/workflows/**`, `tests/e2e/auth.ts` (M)
