@@ -41,11 +41,13 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const payload = exception.getResponse();
       const raw = typeof payload === "string" ? { message: payload } : (payload as Record<string, unknown>);
-      const message = typeof raw.message === "string" ? raw.message : "Request failed";
+      const envelope = (typeof raw.error === "object" && raw.error !== null ? raw.error : raw) as Record<string, unknown>;
+      const message = typeof envelope.message === "string" ? envelope.message : "Request failed";
       res.status(status).json({
         error: {
           type: statusType(status),
-          code: typeof raw.code === "string" ? raw.code : statusType(status),
+          code: typeof envelope.code === "string" ? envelope.code : statusType(status),
+          ...(typeof envelope.param === "string" ? { param: envelope.param } : {}),
           message,
         },
       });

@@ -17,6 +17,7 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-extraneous-class": ["error", { allowWithDecorator: true }],
     },
   },
   {
