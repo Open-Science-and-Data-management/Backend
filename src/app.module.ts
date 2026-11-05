@@ -6,10 +6,11 @@ import { UsersModule } from "./features/users/users.module.js";
 import { AuthModule } from "./features/auth/auth.module.js";
 import { ProjectsModule } from "./features/projects/projects.module.js";
 import { FilesModule } from "./features/files/files.module.js";
+import { DmpsModule } from "./features/dmps/dmps.module.js";
 import { AuthGuard } from "./features/auth/session.js";
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuthModule, ProjectsModule, FilesModule],
+  imports: [DatabaseModule, UsersModule, AuthModule, ProjectsModule, FilesModule, DmpsModule],
   providers: [
     { provide: APP_FILTER, useClass: ErrorEnvelopeFilter },
     { provide: APP_GUARD, useClass: AuthGuard }, // ครอบทุก endpoint — @Public ยกเว้นเฉพาะที่ประกาศ

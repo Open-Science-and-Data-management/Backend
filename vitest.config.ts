@@ -12,5 +12,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // cap 3 workers — Postgres/compose บนเครื่องนี้แคชเมื่อรัน node พร้อมกันเยอะ
+    maxWorkers: 3,
+    minWorkers: 1,
   },
 });

@@ -173,8 +173,9 @@ describe.skipIf(!dbReady)("projects e2e — flow #2", () => {
   it("ลบโครงการ — ปฏิเสธเมื่อมีแผน (flow #13), ลบได้เมื่อไม่มีแผน", async () => {
     // fixture row ตรง dmps (แผนจริงมาตอน M3)
     await db.execute(sql`
-      insert into dmps (project_id, title, draft)
-      values (${projectId}, 'Pollinator DMP', '{}'::jsonb)`);
+      insert into dmps (project_id, title, draft, created_by)
+      values (${projectId}, 'Pollinator DMP', '{}'::jsonb,
+        (select user_id from users where username = 'e2e-proj-r'))`);
     // archived ก็นับ — แต่ตอนนี้ draft อยู่แล้วก็พอ
 
     const refused = await request(app.getHttpServer())

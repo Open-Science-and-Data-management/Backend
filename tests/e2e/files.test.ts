@@ -212,8 +212,8 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
 
     // ทำ active proposal เป็น evidence — ลบไม่ได้ 409 file_in_use, archive ได้
     await db.execute(sql`
-      insert into dmps (project_id, title, draft)
-      values (${projectId}, 'DMP', '{}'::jsonb)`);
+      insert into dmps (project_id, title, draft, created_by)
+      select ${projectId}, 'DMP', '{}'::jsonb, created_by from projects where project_id = ${projectId}`);
     const dmpId = (await db.execute(sql`select dmp_id from dmps where project_id = ${projectId}`)).rows[0].dmp_id as string;
     await db.execute(sql`
       insert into tasks (dmp_id, title, lifecycle_stage, evidence_type, evidence_ref)

@@ -160,9 +160,10 @@ export const projectMembers = pgTable(
 // ── dmps / versions ────────────────────────────────────────────────────────
 export const dmps = pgTable("dmps", {
   dmpId: uuid("dmp_id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
+  projectId: uuid("project_id").references(() => projects.projectId, { onDelete: "restrict" }), // null = ยังไม่ file เข้าโครงการ
+  createdBy: uuid("created_by")
     .notNull()
-    .references(() => projects.projectId, { onDelete: "restrict" }),
+    .references(() => users.userId), // author — FE contract `researcher` (single-writer autosave)
   title: varchar("title", { length: 500 }).notNull(),
   status: dmpStatusEnum("status").notNull().default("draft"),
   planMode: planModeEnum("plan_mode"), // freeze ตอน submit แรก

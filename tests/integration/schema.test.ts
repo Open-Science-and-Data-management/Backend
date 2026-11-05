@@ -96,7 +96,8 @@ describe("dmp_versions", () => {
   beforeAll(async () => {
     dmpId = "33333333-3333-7333-8333-333333333331";
     const pid = "22222222-2222-7222-8222-222222222221";
-    await db.insert(dmps).values({ dmpId, projectId: pid, title: "T", draft: {} });
+    const uid = "11111111-1111-7111-8111-111111111111";
+    await db.insert(dmps).values({ dmpId, projectId: pid, title: "T", draft: {}, createdBy: uid });
     await db.insert(dmpVersions).values({ dmpId, number: 1, status: "approved", snapshot: {} });
   });
 
@@ -121,6 +122,7 @@ describe("dmp_versions", () => {
       projectId: "22222222-2222-7222-8222-222222222221",
       title: "T2",
       draft: {},
+      createdBy: "11111111-1111-7111-8111-111111111111",
     });
     const ok = await db
       .insert(dmpVersions)
