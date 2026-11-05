@@ -24,7 +24,7 @@ storagePath = "data/files"
 chunkTargetTokens = 450
 chunkOverlapPercent = 10
 topK = 5
-embeddingModel = "intfloat/multilingual-e5-large-instruct"
+embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large-instruct ไม่มี onnx บน HF — ใช้ quantized เทียบเท่า 1024 dims (ADR-0028)
 
 [ai]                           # src/features/ai/
 _appliesTo = ["src/features/ai/"]
