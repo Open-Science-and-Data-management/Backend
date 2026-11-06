@@ -629,6 +629,9 @@ export function toVersionResponse(v: VersionRow): DmpVersionResponse {
     approver: null,
     note: v.decisionNote,
     minor_edits: (v.minorEdits ?? []) as unknown[],
+    // QS-2 — จดคู่ carried/dropped ให้ read model อ่านย้อนหลังได้ (ไม่หายเงียบ)
+    carried_minor_edits: (v.carriedEdits ?? []),
+    dropped_minor_edits: (v.droppedEdits ?? []),
   };
 }
 

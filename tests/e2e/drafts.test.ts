@@ -547,4 +547,75 @@ describe.skipIf(!dbReady)("dmps draft e2e — flow #4", () => {
       .set("Authorization", `Bearer ${authorToken}`);
     expect(plan.body.active_version).toBe(revNumber);
   });
+
+  it("QS-2 — approve revision ที่เอา output ออก: minor fix ของ output นั้นถูก dropped ไม่หายเงียบ", async () => {
+    // แผนใหม่ 2 outputs — ตัดสินแล้ว, fix title ของ output ที่สอง, revision เอา output นั้นออก
+    const made = await request(app.getHttpServer())
+      .post("/dmps")
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ project_id: projectId });
+    expect(made.status).toBe(201);
+    const dropDmpId = made.body.dmp_id as string;
+
+    const ds = (id: string, title: string) => ({ ...VALID_DRAFT.dataset[0], dataset_id: id, title });
+    const draft2 = { ...VALID_DRAFT, title: "Drop scenario DMP", dataset: [ds("ds-reads", "16S reads"), ds("ds-chem", "Soil chemistry")] };
+    const saved = await request(app.getHttpServer())
+      .put(`/dmps/${dropDmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 0, draft: draft2 });
+    expect(saved.status).toBe(200);
+    const submitted = await request(app.getHttpServer())
+      .post(`/dmps/${dropDmpId}/submit`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: saved.body.draft_revision });
+    expect(submitted.status).toBe(201);
+    const approved = await request(app.getHttpServer())
+      .post(`/dmps/${dropDmpId}/versions/1/approve`)
+      .set("Authorization", `Bearer ${committeeToken}`)
+      .send({ position: "Committee member" });
+    expect(approved.status).toBe(201);
+
+    // revision major: เอา ds-chem ออกทั้ง output (ยังไม่อนุมัติ)
+    const revDraft = { ...draft2, dataset: [ds("ds-reads", "16S reads")] };
+    const revSaved = await request(app.getHttpServer())
+      .put(`/dmps/${dropDmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 1, draft: revDraft });
+    expect(revSaved.status).toBe(200);
+    const rev = await request(app.getHttpServer())
+      .post(`/dmps/${dropDmpId}/revisions`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: revSaved.body.draft_revision });
+    expect(rev.status).toBe(201);
+
+    // minor fix บน ds-chem ขณะ revision รอ (title เป็น minor ตาม field policy) — fold ลง v1
+    const fixDraft = { ...draft2, dataset: [ds("ds-reads", "16S reads"), ds("ds-chem", "Soil chemistry (batch 2)")] };
+    const fixSaved = await request(app.getHttpServer())
+      .put(`/dmps/${dropDmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 2, draft: fixDraft });
+    expect(fixSaved.status).toBe(200);
+    const folded = await request(app.getHttpServer())
+      .post(`/dmps/${dropDmpId}/minor-edits`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: fixSaved.body.draft_revision });
+    expect(folded.status).toBe(201);
+
+    const res = await request(app.getHttpServer())
+      .post(`/dmps/${dropDmpId}/versions/2/approve`)
+      .set("Authorization", `Bearer ${committeeToken}`)
+      .send({ position: "Committee member" });
+    expect(res.status).toBe(201);
+    const dropped = res.body.dropped_minor_edits as { path: string }[] | null;
+    expect(Array.isArray(dropped)).toBe(true);
+    // QS-2 — fix ของ output ที่ถูกเอาออกถูกจด dropped (target ชี้ ds-chem) ไม่หายเงียบ
+    expect((dropped ?? []).some((d) => JSON.stringify(d).includes("ds-chem"))).toBe(true);
+
+    const after = await request(app.getHttpServer())
+      .get(`/dmps/${dropDmpId}?include=versions`)
+      .set("Authorization", `Bearer ${authorToken}`);
+    expect(after.body.active_version).toBe(2);
+    const v2 = (after.body.versions as { number: number; dropped_minor_edits?: unknown[] }[]).find((v) => v.number === 2);
+    expect((v2?.dropped_minor_edits ?? []).length).toBeGreaterThan(0);
+  });
 });
