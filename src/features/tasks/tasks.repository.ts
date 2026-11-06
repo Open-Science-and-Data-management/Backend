@@ -179,9 +179,9 @@ export async function advanceDatasetStatus(
     const root = { ...(snapshot as Record<string, unknown>) };
     if (!Array.isArray(root.dataset)) return root;
     root.dataset = (root.dataset as Record<string, unknown>[]).map((o) => {
-      if (o === null || typeof o !== "object" || o.dataset_id !== datasetId) return o;
+      if (o.dataset_id !== datasetId) return o;
       const current = typeof o.status === "string" ? o.status : "planned";
-      if ((DATASET_STATUS_RANK[current] ?? 0) >= (DATASET_STATUS_RANK[target] ?? 0)) return o;
+      if (DATASET_STATUS_RANK[current] >= DATASET_STATUS_RANK[target]) return o;
       return { ...o, status: target };
     });
     return root;

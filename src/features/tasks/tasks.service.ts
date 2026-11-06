@@ -5,7 +5,6 @@ import { z } from "zod";
 import { ApiError, fieldInvalid } from "@/shared/http/error-envelope.js";
 import { listOf, type ListEnvelope } from "@/shared/contracts/envelope.js";
 import {
-  TaskEvidenceType,
   taskEvidenceSchema,
   createTaskSchema,
   updateTaskSchema,
@@ -98,7 +97,7 @@ export class TasksService {
     await this.projects.assertVisible(claims, dmp.projectId);
   }
 
-  private async assertAuthor(claims: AccessClaims, dmp: DmpRow): Promise<void> {
+  private assertAuthor(claims: AccessClaims, dmp: DmpRow): void {
     if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "Only the plan's author can do that");
     if (dmp.createdBy !== claims.sub) throw new ApiError(404, "task_not_found", "No task with that id");
   }
@@ -121,7 +120,7 @@ export class TasksService {
   }
 
   private toResponse(task: TaskRow, titles?: Map<string, string>): TaskResponse {
-    const checklist = (task.checklist as TaskChecklistItem[]) ?? [];
+    const checklist = (task.checklist as TaskChecklistItem[]);
     const date = (d: Date | null) => (d === null ? null : d.toISOString().slice(0, 10));
     return {
       object: "task",
@@ -188,8 +187,8 @@ export class TasksService {
       }
       statusFilter = parsedStatus.data;
     }
-    let dmpFilter: string | undefined = query.dmp_id;
-    let projectId: string | undefined = query.project_id;
+    const dmpFilter: string | undefined = query.dmp_id;
+    const projectId: string | undefined = query.project_id;
     const loadedDmps: DmpRow[] = [];
     if (dmpFilter !== undefined) {
       const dmp = await this.loadDmp(dmpFilter);
@@ -231,7 +230,7 @@ export class TasksService {
     if (!parsed.success) throw fieldInvalid(parsed.error);
     const input = parsed.data;
     const dmp = await this.loadDmp(input.dmp_id);
-    await this.assertAuthor(claims, dmp);
+    this.assertAuthor(claims, dmp);
     const version = await this.inForce(dmp);
     this.assertOutputInForce(version, input.dataset_id);
     const rows = await repo.insertTasks(this.db, [
@@ -258,7 +257,7 @@ export class TasksService {
     const parsed = generatedBodySchema.safeParse(body);
     if (!parsed.success) throw fieldInvalid(parsed.error);
     const dmp = await this.loadDmp(dmpId);
-    await this.assertAuthor(claims, dmp);
+    this.assertAuthor(claims, dmp);
     const version = await this.inForce(dmp);
     const outputs = new Set(repo.outputsOf(version.snapshot).map((o) => o.dataset_id));
     for (const t of parsed.data.tasks) {
@@ -344,7 +343,7 @@ export class TasksService {
       });
     }
     const version = await this.inForce(dmp);
-    const checklist = ((task.checklist as TaskChecklistItem[]) ?? []).map((i) => ({ ...i, done: true }));
+    const checklist = ((task.checklist as TaskChecklistItem[])).map((i) => ({ ...i, done: true }));
     const rows = await repo.updateTask(this.db, taskId, {
       status: "done",
       checklist,
@@ -378,7 +377,7 @@ export class TasksService {
     const found = await this.ownedTask(claims, taskId);
     const { task, dmp } = found;
     if (task.status !== "done") throw new ApiError(409, "task_not_done", "Only a finished task can be reopened");
-    const checklist = (task.checklist as TaskChecklistItem[]) ?? []; // evidence + ticks คงอยู่
+    const checklist = (task.checklist as TaskChecklistItem[]); // evidence + ticks คงอยู่
     const rows = await repo.updateTask(this.db, taskId, {
       status: checklist.some((i) => i.done) ? "in_progress" : "todo",
       completedAt: null,
@@ -412,7 +411,7 @@ export class TasksService {
   async remove(claims: AccessClaims, taskId: string): Promise<Record<string, unknown>> {
     const found = await this.ownedTask(claims, taskId);
     const { task } = found;
-    const checklist = (task.checklist as TaskChecklistItem[]) ?? [];
+    const checklist = (task.checklist as TaskChecklistItem[]);
     const hasWork = task.evidenceType !== "none" || checklist.some((i) => i.done) || task.completedAt !== null;
     if (hasWork) {
       throw new ApiError(409, "task_has_recorded_work", "The task has recorded work; cancel it instead");
@@ -430,7 +429,7 @@ export class TasksService {
       throw new ApiError(400, "label_required", "The step needs a label", "/label");
     }
     const found = await this.ownedTask(claims, taskId);
-    const checklist = (found.task.checklist as TaskChecklistItem[]) ?? [];
+    const checklist = (found.task.checklist as TaskChecklistItem[]);
     return this.saveChecklist(found, [...checklist, ...repo.newChecklistItems([parsed.data.label])]);
   }
 
@@ -438,7 +437,7 @@ export class TasksService {
     const parsed = checklistPatchSchema.safeParse(body);
     if (!parsed.success) throw fieldInvalid(parsed.error);
     const found = await this.ownedTask(claims, taskId);
-    const checklist = (found.task.checklist as TaskChecklistItem[]) ?? [];
+    const checklist = (found.task.checklist as TaskChecklistItem[]);
     const index = checklist.findIndex((i) => i.item_id === itemId);
     if (index === -1) throw new ApiError(404, "item_not_found", "The task has no step with that id");
     const updated = checklist.map((i, k) =>
@@ -449,7 +448,7 @@ export class TasksService {
 
   async deleteChecklistItem(claims: AccessClaims, taskId: string, itemId: string): Promise<TaskResponse> {
     const found = await this.ownedTask(claims, taskId);
-    const checklist = (found.task.checklist as TaskChecklistItem[]) ?? [];
+    const checklist = (found.task.checklist as TaskChecklistItem[]);
     if (!checklist.some((i) => i.item_id === itemId)) {
       throw new ApiError(404, "item_not_found", "The task has no step with that id");
     }
@@ -461,7 +460,7 @@ export class TasksService {
     const parsed = checklistReplaceSchema.safeParse(body);
     if (!parsed.success) throw fieldInvalid(parsed.error);
     const found = await this.ownedTask(claims, taskId);
-    const ticked = ((found.task.checklist as TaskChecklistItem[]) ?? []).filter((i) => i.done);
+    const ticked = ((found.task.checklist as TaskChecklistItem[])).filter((i) => i.done);
     return this.saveChecklist(found, [...ticked, ...repo.newChecklistItems(parsed.data.labels)]);
   }
 
@@ -485,7 +484,8 @@ export class TasksService {
     if (task.completedAt !== null) {
       throw new ApiError(409, "task_done", "A finished task's evidence can't change; reopen it first");
     }
-    let { type, ref, label } = parsed.data;
+    const { type: initialType, ref, label } = parsed.data;
+    let type = initialType;
     // DOI ที่วางมาเอง → rdm_deposit เสมอ (classifyPastedEvidence)
     if (typeof ref === "string" && DOI_RE.test(ref.trim())) type = "rdm_deposit";
     if (type === "file" && !(await repo.fileOnProject(this.db, ref ?? "", dmp.projectId))) {
@@ -526,7 +526,7 @@ export class TasksService {
 
   async listReopenOffers(claims: AccessClaims, dmpId: string): Promise<ListEnvelope<Record<string, unknown>>> {
     const dmp = await this.loadDmp(dmpId);
-    await this.assertAuthor(claims, dmp);
+    this.assertAuthor(claims, dmp);
     const groups = await repo.listOpenOfferGroups(this.db, dmpId);
     const taskIds = groups.flatMap((g) => g.rows.map((r) => r.taskId));
     const taskRows =
@@ -594,7 +594,7 @@ export class TasksService {
     const head = (await this.db.select().from(reopenOffers).where(eq(reopenOffers.offerId, offerId)).limit(1)).at(0);
     if (head === undefined) throw new ApiError(404, "offer_not_found", "No offer with that id");
     const dmp = await this.loadDmp(head.dmpId);
-    await this.assertAuthor(claims, dmp);
+    this.assertAuthor(claims, dmp);
     const group = await repo.offerGroup(this.db, offerId);
     if (group === undefined) throw new ApiError(404, "offer_not_found", "No offer with that id");
     if (group.rows.length === 0 || group.rows.some((r) => r.acceptedAt !== null || r.dismissedAt !== null)) {
@@ -614,7 +614,7 @@ export class TasksService {
   private async ownedTask(claims: AccessClaims, taskId: string): Promise<{ task: TaskRow; dmp: DmpRow }> {
     const found = await repo.findTaskWithDmp(this.db, taskId);
     if (found === undefined) throw new ApiError(404, "task_not_found", "No task with that id");
-    await this.assertAuthor(claims, found.dmp);
+    this.assertAuthor(claims, found.dmp);
     return found;
   }
 

@@ -1,8 +1,6 @@
 // notifications repository — read model ของตาราง notifications (ADR-0013 poll);
 // เขียนเกิดใน tx ของ dmps flows แล้ว (addNotifications ใน dmps.repository)
 import { and, desc, eq, isNull, lt, sql, type SQL } from "drizzle-orm";
-import { Inject } from "@nestjs/common";
-import { DB } from "@/database/database.module.js";
 import type { Db } from "@/features/dmps/dmps.repository.js";
 import { notifications } from "@/database/schema/index.js";
 

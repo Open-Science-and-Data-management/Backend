@@ -1,6 +1,6 @@
 // meta service — GET /domain-profiles + /field-policy + /openapi-json
 // เสิร์ฟ registry เดียวกับที่ engine ใช้ (domain-profiles.ts / field-policy.ts / contracts/openapi.ts)
-import { Inject, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
 import { listOf } from "@/shared/contracts/envelope.js";
 import { registry } from "@/shared/contracts/openapi.js";

@@ -130,7 +130,9 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
   const findTask = async (title: string): Promise<string> => {
     const row = await db.select({ id: tasks.taskId }).from(tasks).where(and(eq(tasks.dmpId, dmpId), eq(tasks.title, title)));
     expect(row.length).toBeGreaterThan(0);
-    return row[0]!.id;
+    const first = row[0]?.id;
+    expect(first).toBeDefined();
+    return first as string;
   };
 
   beforeAll(async () => {
@@ -316,7 +318,7 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     expect(blank.body.error.code).toBe("label_required");
     const items = added2.body.checklist as { item_id: string; label: string; done: boolean }[];
     expect(items).toHaveLength(2);
-    const tick = await patch(`/tasks/${taskId}/checklist/${items[0]!.item_id}`, authorToken, { done: true });
+    const tick = await patch(`/tasks/${taskId}/checklist/${(items[0] as { item_id: string }).item_id}`, authorToken, { done: true });
     expect(tick.body.progress_percent).toBe(50);
     expect(tick.body.checklist[0]).toMatchObject({ done: true });
     const missing = await patch(`/tasks/${taskId}/checklist/nope`, authorToken, { done: true });
@@ -350,7 +352,7 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     // dataset ถูกผลักไป collected (collect stage)
     const snap = (
       await db.select().from(dmpVersions).where(and(eq(dmpVersions.dmpId, dmpId), eq(dmpVersions.number, 1)))
-    ).at(0)!;
+    ).at(0) as unknown as Record<string, unknown>;
     const datasets = (snap.snapshot as Record<string, unknown>).dataset as { dataset_id: string; status: string }[];
     expect(datasets.find((d) => d.dataset_id === "ds-reads")?.status).toBe("collected");
 
@@ -391,18 +393,18 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     const fresh = await post("/tasks", authorToken, { dmp_id: dmpId, title: "Draft the README", lifecycle_stage: "share" });
     const freshId = fresh.body.task_id as string;
     await post(`/tasks/${freshId}/checklist`, authorToken, { label: "Keep me" });
-    const before = (await db.select().from(tasks).where(eq(tasks.taskId, freshId))).at(0)!;
+    const before = (await db.select().from(tasks).where(eq(tasks.taskId, freshId))).at(0) as unknown as Record<string, unknown>;
     const beforeItems = before.checklist as { item_id: string; done: boolean }[];
-    await patch(`/tasks/${freshId}/checklist/${beforeItems[0]!.item_id}`, authorToken, { done: true });
+    await patch(`/tasks/${freshId}/checklist/${(beforeItems[0] as { item_id: string }).item_id}`, authorToken, { done: true });
     const replaced = await put(`/tasks/${freshId}/checklist`, authorToken, { labels: ["Write intro", "Review"] });
     expect(replaced.status).toBe(200);
     const afterItems = replaced.body.checklist as { label: string; done: boolean }[];
     expect(afterItems.filter((i) => i.done).map((i) => i.label)).toEqual(["Keep me"]);
     expect(afterItems.filter((i) => !i.done).map((i) => i.label)).toEqual(["Write intro", "Review"]);
     expect(replaced.body.progress_percent).toBe(Math.round((1 / 3) * 100));
-    const itemGone = await del(`/tasks/${freshId}/checklist/${beforeItems[0]!.item_id}`, authorToken);
+    const itemGone = await del(`/tasks/${freshId}/checklist/${(beforeItems[0] as { item_id: string }).item_id}`, authorToken);
     expect(itemGone.status).toBe(200);
-    const gone = (await db.select().from(tasks).where(eq(tasks.taskId, freshId))).at(0)!;
+    const gone = (await db.select().from(tasks).where(eq(tasks.taskId, freshId))).at(0) as unknown as Record<string, unknown>;
     expect(((gone.checklist as { done: boolean }[]).filter((i) => !i.done)).length).toBe(2);
   });
 
@@ -441,7 +443,7 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     // clear evidence — task ยังไม่ done ลบได้
     await put(`/tasks/${t2}/evidence`, authorToken, { type: "url", ref: "https://example.org/data" }).expect(200);
     await del(`/tasks/${t2}/evidence`, authorToken).expect(200);
-    const cleared = (await db.select().from(tasks).where(eq(tasks.taskId, t2))).at(0)!;
+    const cleared = (await db.select().from(tasks).where(eq(tasks.taskId, t2))).at(0) as unknown as Record<string, unknown>;
     expect(cleared.evidenceType).toBe("none");
   });
 
@@ -479,7 +481,7 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     await post(`/tasks/${c2}/cancel`, authorToken).expect(201);
 
     // seed offers ตรง ๆ (output_removed) — dmps module ยังไม่สร้างเอง
-    const authorId = (await db.select({ id: users.userId }).from(users).where(eq(users.username, "e2e-task-a"))).at(0)!.id;
+    const authorId = (await db.select({ id: users.userId }).from(users).where(eq(users.username, "e2e-task-a"))).at(0)?.id as string;
     await db.insert(reopenOffers).values([
       { taskId: c1, dmpId, datasetId: null, datasetTitle: "Soil chemistry", offeredTo: authorId },
       { taskId: c2, dmpId, datasetId: null, datasetTitle: "Soil chemistry", offeredTo: authorId },
@@ -513,11 +515,11 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     const accepted = await post(`/reopen-offers/${offerId}/accept`, authorToken, { task_ids: [c1] });
     expect(accepted.status).toBe(201);
     expect(accepted.body).toMatchObject({ object: "reopen_offer", offer_id: offerId, reopened: 1 });
-    const restored = (await db.select().from(tasks).where(eq(tasks.taskId, c1))).at(0)!;
+    const restored = (await db.select().from(tasks).where(eq(tasks.taskId, c1))).at(0) as unknown as Record<string, unknown>;
     expect(restored.status).toBe("in_progress");
     expect(restored.datasetId).toBe("ds-chem");
     expect(restored.cancelledFrom).toBeNull();
-    const dropped = (await db.select().from(tasks).where(eq(tasks.taskId, c2))).at(0)!;
+    const dropped = (await db.select().from(tasks).where(eq(tasks.taskId, c2))).at(0) as unknown as Record<string, unknown>;
     expect(dropped.status).toBe("cancelled"); // ที่เหลือคง cancelled
 
     // offer ปิดแล้ว → 409 offer_closed ทั้ง accept/dismiss ซ้ำ; รายการไม่มี open offer
@@ -536,10 +538,10 @@ describe.skipIf(!dbReady)("tasks e2e — flow #12 + reopen offers", () => {
     const list2 = await get(`/dmps/${dmpId}/reopen-offers`, authorToken);
     const offer2 = (list2.body.data as Record<string, unknown>[]).at(0);
     expect(offer2?.dataset_title).toBe("Pollinator genomic sequence reads");
-    const dismissed = await post(`/reopen-offers/${offer2!.offer_id as string}/dismiss`, authorToken);
+    const dismissed = await post(`/reopen-offers/${offer2?.offer_id as string}/dismiss`, authorToken);
     expect(dismissed.status).toBe(201);
     expect(dismissed.body).toMatchObject({ object: "reopen_offer", reopened: 0 });
-    expect((await post(`/reopen-offers/${offer2!.offer_id as string}/dismiss`, authorToken)).status).toBe(409);
+    expect((await post(`/reopen-offers/${offer2?.offer_id as string}/dismiss`, authorToken)).status).toBe(409);
     const empty = await get(`/dmps/${dmpId}/reopen-offers`, authorToken);
     expect(empty.body.data).toHaveLength(0);
   });

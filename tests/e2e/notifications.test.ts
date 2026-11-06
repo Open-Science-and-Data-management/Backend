@@ -174,7 +174,7 @@ describe.skipIf(!dbReady)("notifications read model e2e — flow #16", () => {
     let list = await request(app.getHttpServer()).get("/notifications").set("Authorization", `Bearer ${authorToken}`);
     expect(list.body.total_count).toBe(1);
     expect(list.body.unread_count).toBe(1);
-    let first = (list.body.data as Record<string, unknown>[])[0];
+    const first = (list.body.data as Record<string, unknown>[])[0];
     expect(first.object).toBe("notification");
     expect(first.type).toBe("dmp_submitted");
     expect(first.dmp_id).toBe(dmpId);
