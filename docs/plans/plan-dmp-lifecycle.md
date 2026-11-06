@@ -44,20 +44,20 @@
   - Deps: 3
 
 ### Phase 3: Tasks + Notifications
-- [ ] **Task 6: tasks module** — lifecycle (complete/cancel/reopen/delete เฉพาะยังไม่เริ่ม), PATCH checklist array เต็ม, evidence polymorphic + requirement mode-conditional, cancel จด reason/output, reopen offers accept/dismiss
+- [x] **Task 6: tasks module** — lifecycle (complete/cancel/reopen/delete เฉพาะยังไม่เริ่ม), PATCH checklist array เต็ม, evidence polymorphic + requirement mode-conditional, cancel จด reason/output, reopen offers accept/dismiss
   - Acceptance: e2e flows #12 + reopen-offers เขียว; task ที่มีงานบันทึกลบไม่ได้; progress จาก checklist เสมอ
   - Verify: `pnpm test -- tests/e2e/tasks` (L → commit ย่อย: lifecycle → evidence → reopen)
   - Files: `src/features/tasks/**`, `tests/e2e/tasks.ts` (M)
   - Deps: 3
-- [ ] **Task 7: notifications + meta endpoints + CI stage 2** — rows ใน tx, poll/read/read_all/delete; `GET /domain-profiles`, `GET /field-policy`, `GET /openapi-json` (zod→OpenAPI); เปิด CI e2e
+- [x] **Task 7: notifications + meta endpoints + CI stage 2** — rows ใน tx, poll/read/read_all/delete; `GET /domain-profiles`, `GET /field-policy`, `GET /openapi-json` (zod→OpenAPI); เปิด CI e2e
   - Acceptance: e2e flow #16 เขียว; openapi spec generate client ได้; CI stage 2 เขียว
   - Verify: `pnpm test -- tests/e2e/notifications`, ทดลอง generate client จาก spec (M)
   - Files: `src/features/notifications/**`, `src/shared/contracts/openapi/**`, `.github/workflows/**` (M)
   - Deps: 4, 5, 6
 
 ### Checkpoint: M3 จบ
-- [ ] e2e ครบ 17 flows (ทุก flow ยกเว้น AI) เขียวต่อ Postgres จริง; CI stage 2 เขียว
-- [ ] ทบทวน preservation checklist กับ human (QS-1, QS-2, QS-3, QS-8 ผ่านครบ)
+- [x] e2e ครบ 17 flows (ทุก flow ยกเว้น AI) เขียวต่อ Postgres จริง; CI stage 2 เขียว
+- [x] ทบทวน preservation checklist กับ human (QS-1, QS-2, QS-3, QS-8 ผ่านครบ)
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
