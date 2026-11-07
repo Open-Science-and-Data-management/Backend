@@ -15,12 +15,12 @@ ReAct loop เขียนเองบน `AiClient` port → OpenRouter, SSE �
 ## Task List
 
 ### Phase 1: Adapter + Loop
-- [ ] **Task 1: AiClient port + OpenRouter adapter** — stream API, system key จาก env, model ต่อ action จาก `config.toml`
+- [x] **Task 1: AiClient port + OpenRouter adapter** — stream API, system key จาก env, model ต่อ action จาก `config.toml`
   - Acceptance: integration ต่อ mock server — request/response แปลถูกที่ adapter, error mapping เป็น `AiErrorCode` ของ contract
   - Verify: `pnpm test -- tests/integration/ai-adapter` (M)
   - Files: `shared/ports/**`, `shared/adapters/OpenRouterClient/**`, `tests/integration/` (M)
   - Deps: dmp-lifecycle จบ
-- [ ] **Task 2: ReAct loop + 4 tools** — `read_proposal` (extracted text), `search_proposal` (RAG — ไม่พร้อม → บอก agent ใช้ read_proposal), `read_draft`, `read_domain_profiles`
+- [x] **Task 2: ReAct loop + 4 tools** — `read_proposal` (extracted text), `search_proposal` (RAG — ไม่พร้อม → บอก agent ใช้ read_proposal), `read_draft`, `read_domain_profiles`
   - Acceptance: integration ต่อ mock — loop เรียก tools ถูกลำดับจนได้คำตอบ; tools ทั้งหมด read-only (test ยืนยันไม่มี write path)
   - Verify: `pnpm test -- tests/integration/ai-loop` (M)
   - Files: `src/features/ai/**` (M)
