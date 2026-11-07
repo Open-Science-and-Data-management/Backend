@@ -190,6 +190,34 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
     return v2.body.file_id as string;
   });
 
+  it("ชื่อไฟล์ UTF-8 (ไทย) — upload ถอด UTF-8 ถูกต้อง, download ใช้ RFC 5987", async () => {
+    // supertest attach เข้ารหัส non-ASCII เป็น filename* เอง — ต้องยิง multipart เองเพื่อบังคับ filename= เป็น UTF-8 ดิบ (แบบที่ curl/เบราว์เซอร์ส่ง)
+    const THAI = "BF_รายงานผลการรีเทรนโมเดล AI ประจำเดือนตุลาคม ๒๕๖๙.docx";
+    const docx = await fixture("proposal-sample.docx");
+    const boundary = "e2e-utf8";
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nproposal\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${THAI}"\r\nContent-Type: ${DOCX_MIME}\r\n\r\n`,
+      "utf8",
+    );
+    const body = Buffer.concat([head, docx, Buffer.from(`\r\n--${boundary}--\r\n`, "utf8")]);
+    const up = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/files`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Content-Type", `multipart/form-data; boundary=${boundary}`)
+      .send(body);
+    expect(up.status).toBe(201);
+    expect(up.body.filename).toBe(THAI); // latin1 default จะได้ "BF_à¸£à¸²à¸¢…"
+
+    const download = await request(app.getHttpServer())
+      .get(`/files/${up.body.file_id}/content`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(download.status).toBe(200);
+    const disposition = download.headers["content-disposition"] as string;
+    expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(THAI)}`);
+    expect(disposition).toMatch(/^[\x20-\x7e]+$/); // fallback ASCII-only — ไม่งั้น HTTP parser ปฏิเสธ response
+  });
+
   it("archive + delete + 409 file_in_use", async () => {
     const v2FileId = ((await request(app.getHttpServer())
       .get("/files")

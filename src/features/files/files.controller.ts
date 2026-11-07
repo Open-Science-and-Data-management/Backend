@@ -4,6 +4,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { CurrentUser } from "@/features/auth/session.js";
+import { attachmentDisposition } from "@/shared/http/content-disposition.js";
 import { FilesService } from "./files.service.js";
 
 @Controller() // routes ครอบทั้ง /projects/:id/files และ /files — global AuthGuard ครอบ
@@ -11,8 +12,9 @@ export class FilesController {
   constructor(@Inject(FilesService) private readonly files: FilesService) {}
 
   // ขนาดไฟล์ตรวจใน service จาก byteLength (config.toml) — interceptor เก็บเป็น buffer ใน memory
+  // defParamCharset utf8 — busboy default latin1 ทำ filename ไทย/UTF-8 เพี้ยน (RFC 7578 ส่ง UTF-8)
   @Post("projects/:projectId/files")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { defParamCharset: "utf8" }))
   upload(
     @CurrentUser() user: AccessClaims,
     @Param("projectId") projectId: string,
@@ -30,7 +32,7 @@ export class FilesController {
   @Get("files/:fileId/content")
   async content(@CurrentUser() user: AccessClaims, @Param("fileId") fileId: string, @Res() res: Response) {
     const { row, data } = await this.files.content(user, fileId);
-    res.setHeader("Content-Disposition", `attachment; filename="${row.filename}"`);
+    res.setHeader("Content-Disposition", attachmentDisposition(row.filename));
     res.setHeader("Content-Type", row.mimeType ?? "application/octet-stream");
     res.send(data);
   }
