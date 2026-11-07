@@ -40,6 +40,8 @@ pnpm test -- tests/unit    # run a subset (CI does this)
 
 Env: `.env` holds `DATABASE_URL`, `JWT_SECRET` (required, fail-fast), `OPENROUTER_KEY`, `SMTP_URL`, `PORT` (3000). Tunables live in `config.toml` (smol-toml, zod-validated, loaded once in `src/shared/config/`).
 
+GPU embedding: `TransformersEmbedding` ใช้ CUDA/fp16 ก่อน แล้ว fallback CPU/q8 — เครื่องที่มี NVIDIA GPU ต้องติดตั้ง EP หลัง `pnpm install` ทุกครั้งด้วย `cd node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node && ONNXRUNTIME_NODE_INSTALL=cuda12 node ./script/install` (EP ไม่ได้มากับ npm, ~272MB; CI ไม่มี GPU ใช้ fallback อัตโนมัติ).
+
 ## Code Conventions & Common Patterns
 
 - **Naming**: features lowercase nouns in `src/features/`; DB snake_case, TS camelCase, API responses snake_case (FE contract). Files: `<name>.service.ts` etc.

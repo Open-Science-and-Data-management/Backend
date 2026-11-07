@@ -12,8 +12,14 @@ type Extractor = (
 // เรียกผ่าน lazy import — onnxruntime-node โหลด native เมื่อใช้ครั้งแรกเท่านั้น
 async function loadExtractor(model: string): Promise<Extractor> {
   const { pipeline } = await import("@huggingface/transformers");
-  const extractor = await pipeline("feature-extraction", model, { dtype: "q8" });
-  return extractor;
+  try {
+    // CUDA/fp16 เร็วกว่า CPU/q8 ~20x (วัด 24 chunks: 605ms vs 12,372ms) — EP ต้องติดตั้งด้วย
+    // ONNXRUNTIME_NODE_INSTALL=cuda12 (AGENTS.md); เครื่องไม่มี GPU/EP → ตกกลับ CPU
+    return await pipeline("feature-extraction", model, { dtype: "fp16", device: "cuda" });
+  } catch {
+    console.warn("CUDA embedding unavailable — falling back to CPU/q8");
+    return pipeline("feature-extraction", model, { dtype: "q8" });
+  }
 }
 
 @Injectable()
@@ -31,8 +37,14 @@ export class TransformersEmbedding implements Embedding {
   private async run(texts: string[]): Promise<number[][]> {
     this.extractor ??= loadExtractor(this.model);
     const extractor = await this.extractor;
-    const output = await extractor(texts, { pooling: "mean", normalize: true });
-    return output.tolist();
+    // แบ่ง batch — one-shot ทั้งเอกสารจัดสรร activation ทั้งก้อนพร้อมกัน (48 chunks ≈ 2.5 GB RSS เด้ง)
+    const out: number[][] = [];
+    for (let i = 0; i < texts.length; i += 16) {
+      const batch = texts.slice(i, i + 16);
+      const output = await extractor(batch, { pooling: "mean", normalize: true });
+      out.push(...output.tolist());
+    }
+    return out;
   }
 
   embedPassages(texts: string[]): Promise<number[][]> {
