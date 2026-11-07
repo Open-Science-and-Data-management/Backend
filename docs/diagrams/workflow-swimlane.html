@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research data workflow · Swimlane</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 1000px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Swimlane · Researchers → System → Committee</p>
+    <h1>Research data workflow</h1>
+
+    <svg viewBox="0 0 1000 544" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="workflow-swimlane-title workflow-swimlane-desc">
+      <title id="workflow-swimlane-title">Research data workflow: project to docx to DMP review</title>
+      <desc id="workflow-swimlane-desc">Swimlane diagram of the research workflow: a researcher creates a project and uploads a docx, the backend extracts it into a DMP draft, the draft is submitted to the committee, and approval auto-generates lifecycle tasks with notifications.</desc>
+      <defs>
+        <marker id="workflow-swimlane-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="workflow-swimlane-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- Lane dividers -->
+      <line x1="40" y1="96" x2="960" y2="96" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+      <line x1="40" y1="224" x2="960" y2="224" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+      <line x1="40" y1="344" x2="960" y2="344" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+      <line x1="40" y1="464" x2="960" y2="464" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+
+      <!-- Actor column divider -->
+      <line x1="160" y1="96" x2="160" y2="464" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+
+      <!-- Lane labels -->
+      <text x="60" y="124" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">RESEARCHER</text>
+      <text x="60" y="252" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">SYSTEM</text>
+      <text x="60" y="372" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">COMMITTEE</text>
+
+      <!-- Arrows (drawn before boxes) -->
+      <!-- 1. Create project → Upload docx (within Researcher) -->
+      <line x1="300" y1="160" x2="340" y2="160" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 2. Upload docx → Extract (Researcher → System, vertical) -->
+      <line x1="402" y1="184" x2="402" y2="272" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 3. Extract → Draft DMP (System → Researcher, elbow up) -->
+      <path d="M 464,296 H 588 V 184" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 4. Draft DMP → Submit version (within Researcher) -->
+      <line x1="620" y1="160" x2="660" y2="160" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 5. Submit version → Review (critical handoff, coral, vertical) -->
+      <line x1="722" y1="184" x2="722" y2="392" stroke="#bf4520" stroke-width="1.4" marker-end="url(#workflow-swimlane-arrow-accent)"/>
+      <!-- 6. Review → Draft DMP (rejected, return path, dashed, hop over extract vertical) -->
+      <path d="M 690,392 V 208 H 594 A 6 6 0 0 0 582,208 H 532 V 184" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 7. Review → Generate tasks (approved, Committee → System) -->
+      <path d="M 784,416 H 874 V 320" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 8. Generate tasks → Execute tasks (System → Researcher, notification) -->
+      <line x1="874" y1="272" x2="874" y2="184" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#workflow-swimlane-arrow)"/>
+      <!-- 9. Execute tasks weekly loop (submit deliverable, repeat next week) -->
+      <path d="M 944,152 H 948 V 112 H 844 V 136" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#workflow-swimlane-arrow)"/>
+
+      <!-- Arrow labels (mask + text beside vertical segments) -->
+      <rect x="410" y="220" width="52" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="436" y="230" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">UPLOAD</text>
+
+      <rect x="596" y="236" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="624" y="246" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">EXTRACT</text>
+
+      <rect x="730" y="280" width="52" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="756" y="290" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">SUBMIT</text>
+
+      <rect x="626" y="300" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="654" y="310" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">REJECTED</text>
+
+      <rect x="882" y="360" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="914" y="370" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">APPROVED</text>
+
+      <rect x="882" y="220" width="52" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="908" y="230" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">NOTIFY</text>
+
+      <rect x="852" y="98" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="896" y="108" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">NEXT WEEK</text>
+
+      <!-- Steps -->
+      <!-- Researcher: Create project -->
+      <rect x="180" y="136" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="240" y="158" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Create project</text>
+      <text x="240" y="172" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /projects</text>
+
+      <!-- Researcher: Upload docx -->
+      <rect x="340" y="136" width="124" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="402" y="158" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Upload docx</text>
+      <text x="402" y="172" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /files</text>
+
+      <!-- Researcher: Draft DMP -->
+      <rect x="500" y="136" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="560" y="158" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Draft DMP</text>
+      <text x="560" y="172" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">autosave · revision</text>
+
+      <!-- Researcher: Submit version -->
+      <rect x="660" y="136" width="124" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="722" y="158" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Submit version</text>
+      <text x="722" y="172" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">major / minor diff</text>
+
+      <!-- Researcher: Execute tasks -->
+      <rect x="804" y="136" width="140" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="874" y="158" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Execute tasks</text>
+      <text x="874" y="172" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">weekly: checklist · evidence</text>
+
+      <!-- System: Extract docx -->
+      <rect x="340" y="272" width="124" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="402" y="294" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Extract docx</text>
+      <text x="402" y="308" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">parse · embed for RAG</text>
+
+      <!-- System: Generate tasks + notify (focal outcome) -->
+      <rect x="804" y="272" width="140" height="48" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+      <text x="874" y="294" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Generate tasks</text>
+      <text x="874" y="308" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">+ SSE notification</text>
+
+      <!-- Committee: Review version -->
+      <rect x="660" y="392" width="124" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="722" y="414" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Review version</text>
+      <text x="722" y="428" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">approve / reject</text>
+
+      <!-- Legend -->
+      <line x1="40" y1="488" x2="960" y2="488" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="504" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="516" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="60" y="524" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+
+      <rect x="116" y="516" width="14" height="10" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+      <text x="136" y="524" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Auto outcome</text>
+
+      <line x1="232" y1="521" x2="260" y2="521" stroke="#bf4520" stroke-width="1.4" marker-end="url(#workflow-swimlane-arrow-accent)"/>
+      <text x="268" y="524" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Critical handoff</text>
+
+      <line x1="384" y1="521" x2="412" y2="521" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#workflow-swimlane-arrow)"/>
+      <text x="420" y="524" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Return path (rejected)</text>
+
+      <line x1="584" y1="521" x2="612" y2="521" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#workflow-swimlane-arrow)"/>
+      <text x="620" y="524" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Weekly cycle (submit deliverable)</text>
+    </svg>
+  </div>
+</body>
+</html>
