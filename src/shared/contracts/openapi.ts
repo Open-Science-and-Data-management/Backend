@@ -392,10 +392,6 @@ const fieldInvalid400 = {
 const createProjectRequestSchema = z.object({
   project_name: oa(z.string().min(1), { description: "ชื่อโครงการ", example: "โครงการดิจิทัลภาพถ่ายมรดกไทย" }),
   description: oa(z.string().optional(), { description: "คำอธิบายโครงการ", example: "แปลงภาพถ่ายโบราณสถานเป็นดิจิทัลพร้อม metadata" }),
-  proposal_file_id: oa(z.string().optional(), {
-    description: "file id ของไฟล์ proposal (.docx) ที่อัปโหลดแล้วผ่าน POST /projects/{projectId}/files (purpose=proposal)",
-    example: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  }),
 });
 
 registry.registerPath({
@@ -413,7 +409,6 @@ registry.registerPath({
           example: {
             project_name: "โครงการดิจิทัลภาพถ่ายมรดกไทย",
             description: "แปลงภาพถ่ายโบราณสถานเป็นดิจิทัลพร้อม metadata",
-            proposal_file_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
           },
         },
       },

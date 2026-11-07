@@ -17,6 +17,8 @@ export const createProjectSchema = projectSchema.omit({
   project_id: true,
   created_at: true,
   updated_at: true,
+  // proposal_file_id ผูกโดย upload purpose=proposal / analyze-proposal เท่านั้น (ADR-0024)
+  proposal_file_id: true,
 });
 
 export type Project = z.infer<typeof projectSchema>;

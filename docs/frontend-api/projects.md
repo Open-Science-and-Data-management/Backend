@@ -363,7 +363,9 @@ curl -X POST https://api.example.ac.th/v1/projects \
 
 The body is a project as
 [`project.schema.ts`](../../src/schemas/project/project.schema.ts) defines
-it, without `plan_mode` or `status`.
+it, without `plan_mode`, `status`, or `proposal_file_id` — the proposal is
+bound later by [uploading a file with `purpose=proposal`](./files.md), and
+the project turns `active` once it is analysed.
 
 **Response**
 
