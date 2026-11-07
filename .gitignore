@@ -13,3 +13,4 @@ Thumbs.db
 .vite/
 .turbo/
 node_modules/
+tmp.md

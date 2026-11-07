@@ -1,13 +1,11 @@
-// meta controller — ระบบประกาศ schema ฝั่ง frontend: domain profiles, field policy, OpenAPI spec
+// meta controller — ระบบประกาศ schema ฝั่ง frontend: domain profiles, field policy
+// (OpenAPI spec เสิร์ฟโดย SwaggerModule ใน main.ts — ADR-0010)
 import { Controller, Get, Inject } from "@nestjs/common";
-import { MetaService, OPENAPI_DOCUMENT } from "./meta.service.js";
+import { MetaService } from "./meta.service.js";
 
 @Controller()
 export class MetaController {
-  constructor(
-    @Inject(MetaService) private readonly meta: MetaService,
-    @Inject(OPENAPI_DOCUMENT) private readonly openApiDocument: unknown,
-  ) {}
+  constructor(@Inject(MetaService) private readonly meta: MetaService) {}
 
   @Get("domain-profiles")
   domainProfiles() {
@@ -17,10 +15,5 @@ export class MetaController {
   @Get("field-policy")
   fieldPolicy() {
     return this.meta.fieldPolicy();
-  }
-
-  @Get("openapi-json")
-  openapiJson() {
-    return this.openApiDocument;
   }
 }

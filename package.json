@@ -11,9 +11,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "tsx": "tsx --env-file=.env",
+    "dev": "tsx --env-file=.env src/main.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/database/migrate.ts up",
-    "db:seed": "tsx src/database/migrate.ts seed"
+    "db:migrate": "tsx --env-file=.env src/database/migrate.ts up",
+    "db:seed": "tsx --env-file=.env src/database/migrate.ts seed"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.3.3",
