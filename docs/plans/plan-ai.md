@@ -27,25 +27,25 @@ ReAct loop เขียนเองบน `AiClient` port → OpenRouter, SSE �
   - Deps: 1
 
 ### Phase 2: Streaming + เงื่อนไขธุรกิจ
-- [ ] **Task 3: SSE endpoint** — `POST /dmps/{scope}/ai/{action}` + `POST /ai/analyze-proposal` (ผูก proposal ให้โครงการ)
+- [x] **Task 3: SSE endpoint** — `POST /dmps/{scope}/ai/{action}` + `POST /ai/analyze-proposal` (ผูก proposal ให้โครงการ)
   - Acceptance: e2e flow #3 เขียว — event ไล่ status/tool → delta → proposal → done; abort/error จบด้วย terminal event เสมอ
   - Verify: `pnpm test -- tests/e2e/ai-stream` (M)
   - Files: `src/features/ai/**` (M)
   - Deps: 2
-- [ ] **Task 4: quota + idempotency** — pre-flight hint, reconcile ตอนจบ (cached 10%, นับ fail/abort), reset รายเดือน, `Idempotency-Key` + replay 24 ชม.
+- [x] **Task 4: quota + idempotency** — pre-flight hint, reconcile ตอนจบ (cached 10%, นับ fail/abort), reset รายเดือน, `Idempotency-Key` + replay 24 ชม.
   - Acceptance: retry ด้วย key เดิมไม่หักโควตาซ้ำ (integration); โควตาเกิน → `429 quota_exceeded` พร้อม retryable; e2e quota hint
   - Verify: `pnpm test -- tests/integration/ai-quota` (M)
   - Files: `src/features/ai/**`, `src/features/users/**` (อ่านโควตา) (M)
   - Deps: 3
-- [ ] **Task 5: thread persist + endpoints ที่เหลือ + ปิด 18 flows** — ai_thread_entries (user/event/assistant, decision stale), `GET/PUT thread`, clear/adopt, `GET /ai/quota`
+- [x] **Task 5: thread persist + endpoints ที่เหลือ + ปิด 18 flows** — ai_thread_entries (user/event/assistant, decision stale), `GET/PUT thread`, clear/adopt, `GET /ai/quota`
   - Acceptance: e2e flow #17 เขียว — chat unscoped + scoped, clear/adopt, decisions จดถูก; **suite 18 flows ครบเขียว**
   - Verify: `pnpm test -- tests/e2e` ทั้งชุด (M)
   - Files: `src/features/ai/**`, `tests/e2e/ai-thread.ts` (M)
   - Deps: 4
 
 ### Checkpoint: v1 จบ
-- [ ] e2e ครบ 18 flows เขียวต่อ Postgres จริง; ทุก run จบ terminal event; ไม่มี tool เขียน draft (มี test ยืนยัน)
-- [ ] ตั้งค่า `ai.models` จริงใน `config.toml` + ทดลองต่อ OpenRouter จริงหนึ่ง run กับ human
+- [x] e2e ครบ 18 flows เขียวต่อ Postgres จริง; ทุก run จบ terminal event; ไม่มี tool เขียน draft (มี test ยืนยัน) — meta.test.ts `GET /openapi-json` เป็น 404 มาก่อนงาน ai (จาก main, ไม่ใช่ flow ที่ 18)
+- [x] ตั้งค่า `ai.models` จริงใน `config.toml` + ทดลองต่อ OpenRouter จริงหนึ่ง run กับ human — เริ่มด้วย `google/gemini-2.5-flash` ทุก action (chat 5.0s, usage 2536 tokens, terminal `done`, system prompt ถูกยึด: ไม่แนะนำ repository/licence เฉพาะเจาะจง); จะปรับรุ่นต่อ action จากผลใช้งานจริง
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

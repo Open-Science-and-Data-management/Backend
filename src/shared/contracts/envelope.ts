@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiUsageReportSchema } from "./ai.js";
 
 // ── Error envelope (ADR-0014) ─────────────────────────────────────────────
 // Stripe-style; `param` ถือ JSON pointer เมื่อ error ชี้ตำแหน่งใน draft
@@ -42,7 +43,18 @@ export const aiSseEventSchema = z.discriminatedUnion("event", [
   }),
   z.object({ event: z.literal("delta"), text: z.string() }),
   z.object({ event: z.literal("proposal"), proposal: z.unknown() }),
-  z.object({ event: z.literal("done") }),
-  z.object({ event: z.literal("error"), code: z.string(), message: z.string() }),
+  z.object({
+    event: z.literal("done"),
+    entry_id: z.string().optional(), // assistant entry ที่ run นี้เขียนลง thread
+    dmp_id: z.string().optional(), // analyze-proposal — แผนที่สร้างใหม่
+    usage: aiUsageReportSchema.optional(),
+  }),
+  z.object({
+    event: z.literal("error"),
+    code: z.string(),
+    message: z.string(),
+    usage: aiUsageReportSchema.optional(), // ส่วนที่โมเดลประมวลผลไปแล้ว — นับโควตาแม้ fail/abort (ADR-0023)
+    resets_at: z.string().optional(), // เฉพาะ quota_exceeded
+  }),
 ]);
 export type AiSseEvent = z.infer<typeof aiSseEventSchema>;

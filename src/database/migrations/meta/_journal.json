@@ -50,6 +50,13 @@
       "when": 1793899256035,
       "tag": "0007_vengeful_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794112353196,
+      "tag": "0008_cooing_dragon_man",
+      "breakpoints": true
     }
   ]
 }

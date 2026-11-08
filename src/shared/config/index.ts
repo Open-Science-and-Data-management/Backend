@@ -24,7 +24,7 @@ const configSchema = z.object({
       embeddingModel: z.string(),
     }),
   }),
-  ai: z.object({ models: z.record(z.string()) }),
+  ai: z.object({ mock: z.boolean().default(false), models: z.record(z.string()) }),
   notifications: z.object({}),
 });
 

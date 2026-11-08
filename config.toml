@@ -1,26 +1,45 @@
 # ค่า tunable — mirror โครงสร้างโฟลเดอร์ (_appliesTo ระบุ feature) · arc42 §8.7
-# Loader จุดเดียว: src/shared/config/
+# Loader จุดเดียว: src/shared/config/ (zod validate ทุกคีย์ — ใส่ผิดชนิด → fail-fast ตอน bootstrap)
+# แก้ไฟล์นี้แล้วต้อง restart (loadConfig ครั้งเดียวตอนเริ่ม, ไม่ reload ระหว่างรัน)
 
 [app]
+# name — ชื่อ service (ยังไม่ถูกใช้ใน logic; ไว้ระบุตัวตนใน log/metrics ภายหลัง)
+# debug — เผื่อไว้เปิดโหมด verbose ในอนาคต (ปัจจุบันไม่มี consumer — ตั้งค่าอะไรก็ไม่มีผล)
 name = "uni-backend"
 debug = false
 
 [auth]                         # src/features/auth/
 _appliesTo = ["src/features/auth/"]
+# accessTokenTtlMinutes — อายุ access token (JWT, นาที) — หมดอายุ FE ต้อง refresh (flow #15);
+#   สั้น = ปลอดภัยขึ้นแต่ refresh ถี่, ยาว = สบายมือแต่ token หลุดมีผลนาน
 accessTokenTtlMinutes = 15
+# refreshTokenTtlDays — อายุ refresh token (วัน) — นานเท่าไร session ที่ไม่ได้ใช้ยังกลับมาได้
 refreshTokenTtlDays = 14
 
 [auth.argon2]                  # ADR-0029 — OWASP minimum
+# พารามิเตอร์ Argon2id ตอน hash รหัสผ่าน — ยิ่งสูงยิ่งแพงทั้งกับผู้ใช้ (หน่วงตอน sign-in) และผู้โจมตี
+#   memoryCostKiB — หน่วยความจำต่อ hash (KiB); 19456 = 19 MiB (OWASP ขั้นต่ำ)
+#   timeCost — จำนวนรอบ iteration
+#   parallelism — จำนวน lane ขนาน (1 = CPU เครื่องเล็กทำไหว)
+# ปรับค่าแล้ว hash เดิมยัง verify ได้ (พารามิเตอร์ฝังใน hash) — ผู้ใช้จะได้ hash ใหม่เมื่อเปลี่ยนรหัสเอง
 memoryCostKiB = 19456
 timeCost = 2
 parallelism = 1
 
 [files]                        # src/features/files/
 _appliesTo = ["src/features/files/"]
+# maxFileSizeMb — ขนาดไฟล์ upload สูงสุด (MB) เกิน → 400; ปัจจุบัน docx ≤ 20MB ตาม FE ai.md จึงตั้ง 25 กันเหลื่อม
 maxFileSizeMb = 25
+# storagePath — โฟลเดอร์เก็บ blob จริง (disk-storage adapter, path เทียบ cwd ของ process)
 storagePath = "data/files"
 
 [files.rag]                    # ADR-0025
+# ตัด chunk เอกสารเพื่อ embed + semantic search (search_proposal ของ AI)
+#   chunkTargetTokens — เป้าขนาด chunk (tokens) — เล็ก = ค้นเป๊ะขึ้นแต่ context ต่อ hit น้อยลง
+#   chunkOverlapPercent — % ทับซ้อนระหว่าง chunk กันความหมายถูกตัดครึ่ง (0 = ไม่ทับ)
+#   topK — จำนวน chunk ที่คืนต่อ query (search_proposal)
+#   embeddingModel — โมเดล ONNX บน HF (TransformersEmbedding, fp16/CUDA ก่อน fallback CPU q8 — ADR-0028);
+#     เปลี่ยนรุ่น = vector เดิมใช้ไม่ได้ ต้อง re-embed ทุกไฟล์ (dims ต้องตรง schema)
 chunkTargetTokens = 450
 chunkOverlapPercent = 10
 topK = 5
@@ -28,10 +47,28 @@ embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large
 
 [ai]                           # src/features/ai/
 _appliesTo = ["src/features/ai/"]
+# mock — สวิตช์เปิด/ปิดการเรียกโมเดลจริง (TC-6):
+#   false = OpenRouter จริง — ต้องมี OPENROUTER_KEY ใน .env, มีค่าเครดิต, ออก network ทุก run
+#   true  = MockAiClient — ไม่ออก network ไม่ใช้ key เหมาะกับ dev/test/เดโม่:
+#           • ไหลตาม ReAct เดิม: รอบแรกเรียก tool ตัวแรกที่มี 1 ครั้ง → รอบสองตอบ JSON canned (ออกเป็น delta 2 ชิ้น + proposal)
+#           • usage คงที่ (input 100 / cached 20 / output 50) — โควตายังถูกหัก 132/run ตามสูตร reconcile จริง เห็นพฤติกรรมโควตาได้โดยไม่เปลืองเครดิต
+#           • e2e/integration ทั้งชุดไม่อ่านค่านี้ (override AI_CLIENT ที่ test เอง) — ค่านี้มีผลกับ `pnpm dev` และ app จริงเท่านั้น
+mock = false
 
 [ai.models]
-default = "placeholder"
-analyze_proposal = "placeholder"
+# โมเดลต่อ action — key คือชื่อ action ตาม endpoint (ลบ -, path /dmps/{scope}/ai/{action} + /ai/analyze-proposal):
+#   chat · suggest · regenerate-field · generate-tasks · checklist · analyze_proposal
+# action ไหนไม่ปรากฏในตาราง → ใช้ `default`
+# ค่า = slug รูปแบบ "vendor/model" จาก https://openrouter.ai/models เช่น "openai/gpt-4o-mini", "anthropic/claude-haiku-4.5"
+# เงื่อนไขเลือกรุ่น:
+#   • ต้องรองรับ tool calling (กรองได้ที่ openrouter.ai/models?supported_parameters=tools) — loop ยิง tools ทุก action ยกเว้นบาง flow
+#   • คำตอบสุดท้ายถูก parse เป็น JSON proposal — รุ่นที่ตาม instruction ตรงไป (structured outputs) จะเสถียรกว่า
+#   • ราคา/เร็วต่างกันมาก — analyze_proposal อ่าน proposal เต็มเล่มจึงแพงสุด คุ้มใช้รุ่นแข็ง; chat ใช้รุ่นเล็กก็พอ
+# ผลถ้าใส่ slug ผิด → OpenRouter 400 → error terminal `ai_invalid_request` (ไม่ crash)
+default = "google/gemini-2.5-flash"
+analyze_proposal = "google/gemini-2.5-flash" # ร่างแผนทั้งฉบับ — เปลี่ยนเป็นรุ่นแข็งกว่าได้หลังทดลอง
+chat = "google/gemini-2.5-flash"
 
 [notifications]                # src/features/notifications/
 _appliesTo = ["src/features/notifications/"]
+# (ยังไม่มี tunable — notifications เป็น SSE/polling ตาม ADR-0024, ไม่มี SMTP จริงใน v1)

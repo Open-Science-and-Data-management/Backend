@@ -1,0 +1,1 @@
+ALTER TABLE "ai_thread_entries" ADD COLUMN "hidden_at" timestamp with time zone;

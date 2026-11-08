@@ -289,6 +289,7 @@ export const aiThreadEntries = pgTable("ai_thread_entries", {
   content: jsonb("content").notNull(),
   tokenCount: integer("token_count").notNull().default(0),
   decision: aiDecisionEnum("decision"),
+  hiddenAt: timestamp("hidden_at", { withTimezone: true }), // clear — ซ่อนไม่ลบ (preservation, FE ai.md)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("ai_thread_scope_idx").on(t.dmpId, t.ownerId, t.createdAt),

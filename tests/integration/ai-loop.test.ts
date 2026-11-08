@@ -67,7 +67,9 @@ describe.skipIf(!dbReady)("react loop + tools (integration)", () => {
   let events: AiSseEvent[];
   const apps: INestApplication[] = [];
 
-  const track = (e: AiSseEvent) => events.push(e);
+  const track = (e: AiSseEvent): void => {
+    events.push(e);
+  };
 
   /** loop instance ต่อ test — override AI_CLIENT ด้วย scripted client แล้วต่อ moduleRef เดิม */
   async function makeLoop(client: AiClient): Promise<ReactLoop> {

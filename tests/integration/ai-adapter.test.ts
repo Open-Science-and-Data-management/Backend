@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { loadConfig } from "@/shared/config/index.js";
+import { config, loadConfig } from "@/shared/config/index.js";
 import { OpenRouterClient } from "@/shared/adapters/open-router/open-router-client.js";
 import { AiError, type AiMessage, type AiToolDef } from "@/shared/ports/ai-client.js";
 
@@ -98,7 +98,7 @@ describe("open-router adapter (integration)", () => {
     // request แปลถูกที่ adapter
     expect(requests[0].headers.authorization).toBe("Bearer test-key");
     const body = requests[0].body as { model: string; stream: boolean; messages: unknown[]; tools: unknown[]; tool_choice: string };
-    expect(body.model).toBe("placeholder"); // จาก config.toml [ai.models].analyze_proposal
+    expect(body.model).toBe(config().ai.models.analyze_proposal); // จาก config.toml [ai.models] — action analyze_proposal
     expect(body.stream).toBe(true);
     expect(body.messages).toEqual([{ role: "user", content: "hello" }]);
     expect(body.tools).toEqual([
