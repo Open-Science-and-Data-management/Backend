@@ -20,6 +20,7 @@ http://localhost:3000
 - [Reviews](reviews.md) — งานพิจารณาของคณะกรรมการ: รายการแผนที่รอตัดสินและสถานะล่าสุด
 - [Tasks](tasks.md) — งาน lifecycle ที่ผูกกับ DMP: checklist, evidence, complete/reopen/cancel, reopen offers
 - [Notifications](notifications.md) — การแจ้งเตือน: อ่าน, อ่านทั้งหมด, ลบ
+- [AI](ai.md) — ผู้ช่วย AI: quota, action streaming (SSE) chat/suggest/analyze-proposal, thread persistence + idempotency
 - [Domain profiles](domain-profiles.md) — ชุดโปรไฟล์ domain และ field policy สำหรับฟอร์ม DMP
 
 **Core topics**
