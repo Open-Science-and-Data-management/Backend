@@ -1,123 +1,165 @@
 # notifications
 
-> โมดูล read model ของระบบแจ้งเตือน (ADR-0013): ให้ผู้ใช้ดึงรายการแจ้งเตือนของตนเองแบบ polling พร้อม `unread_count`, ทำเครื่องหมายอ่าน และลบ ผ่าน REST API
+> โมดูลนี้คือ read model ของระบบแจ้งเตือน ตาม ADR-0013 — ผู้ใช้เรียกผ่าน REST API เท่านั้น
+> ผู้ใช้ดึงรายการแจ้งเตือนของตัวเองด้วยการ polling พร้อม `unread_count`
+> ผู้ใช้ยังทำเครื่องหมายว่าอ่านแล้ว และลบรายการได้ด้วยตัวเอง
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Folder Structure](#folder-structure)
+- [Business Rules](#business-rules)
+- [Usage](#usage)
+- [Dependencies](#dependencies)
+- [Diagrams](#diagrams)
 
 ## Overview
 
-- read model ของตาราง `notifications` — ดึงรายการแบบ keyset pagination คืนเป็น ListEnvelope (ADR-0015) ที่แถม `unread_count`
-- จัดการสถานะการอ่าน: mark read รายการเดียว, read all (idempotent) และลบรายการเดียว/ทั้งหมด เฉพาะของผู้ใช้ที่ sign in
-- เป็นโมดูล "อ่านอย่างเดียว" — การ insert แจ้งเตือนเกิดใน transaction ของ dmps flows แล้ว FE รับข้อมูลด้วยการ poll ตาม ADR-0013
-- **ไม่ควรทำ / Out of scope:**
-  - การสร้าง (insert) แจ้งเตือน — เป็นหน้าที่ของ dmps flows (`addNotifications` ใน `dmps.repository.ts`)
-  - การส่งแจ้งเตือนแบบ realtime (SSE/WebSocket/push) — FE ต้องเรียก `GET /notifications` เอง
+- โมดูลนี้อ่านและจัดการตาราง `notifications` เท่านั้น — รูปแบบเช่นนี้เรียกว่า read model
+- ทำได้ 3 อย่าง: ดึง list พร้อม `unread_count`, mark read และลบ
+- จัดหน้าด้วย keyset pagination — ใช้แถวสุดท้ายของหน้าก่อนเป็น cursor แทนเลขหน้า
+- list คืนผลลัพธ์ตามรูปแบบ ListEnvelope (ADR-0015) โดยแถม `unread_count` เพิ่มเข้ามา
+- โมดูลนี้ไม่เคย insert แจ้งเตือนเอง — การเขียนเกิดใน transaction ของ dmps flows เท่านั้น
+- **Out of scope:**
+  - การสร้างแจ้งเตือน — เป็นหน้าที่ของ dmps ผ่าน `addNotifications` ใน `dmps.repository.ts`
+  - การ push แบบ realtime เช่น SSE หรือ WebSocket — FE ต้อง poll `GET /notifications` เอง (ADR-0013)
 
 ## Folder Structure
 
 ```text
 notifications/
-├── notifications.controller.ts   # HTTP boundary บาง ๆ — ผูก 5 route ของ /notifications ให้ service
-├── notifications.service.ts      # Business Logic — validate query (zod), บังคับ role, map snake_case, 404 ซ่อนการมีอยู่
-├── notifications.repository.ts   # plain Drizzle functions (DI-free รับ Db) — list/count/markRead/delete
+├── notifications.controller.ts   # HTTP boundary บาง ๆ — ผูก 5 route ของ /notifications
+├── notifications.service.ts      # validate query (zod), บังคับ role, map snake_case, 404 ซ่อนการมีอยู่
+├── notifications.repository.ts   # plain Drizzle functions รับ Db — list/count/markRead/delete
 └── notifications.module.ts       # ประกาศ controller + provider เข้ากับ AppModule
 ```
 
 ## Business Rules
 
-- การยืนยันตัวตนบังคับทุก route ผ่าน AuthGuard ระดับ global — `@CurrentUser()` คืน 401 `not_signed_in` เมื่อไม่มี claims
-- ทุก operation ปฏิเสธ `claims.role === "admin"` ด้วย 403 `permission_denied` ("Admin has no notification access") — role อื่นเข้าถึงได้ปกติ
-- พารามิเตอร์ query: `unread` รับเฉพาะ `"true"`/`"false"` (แปลงเป็น boolean), `limit` ต้องเป็นจำนวนเต็ม 1–100 (ค่า default 20), `starting_after` เป็น `notification_id` ของหน้าก่อน — ละเมิดใด ๆ → 400 `field_invalid` พร้อม JSON pointer ใน `param`
-- เรียงลำดับผลลัพธ์ `created_at` มาก่อน (desc) โดยใช้ `notification_id` desc เป็น tiebreak; ดึง `limit + 1` แถวเพื่อคำนวณ `has_more`
-- Cursor pagination เป็น keyset: เทียบ tuple `(created_at, notification_id)` น้อยกว่าของ `starting_after` — ถ้า id นั้นไม่มีอยู่จริง subquery คืน NULL เทียบไม่ได้ หน้าจึงว่าง (ไม่ error)
-- `total_count` นับตามเงื่อนไขเดียวกับหน้าปัจจุบัน (รวมตัวกรอง unread) ส่วน `unread_count` นับ unread ทั้งหมดของผู้ใช้เสมอ — ไม่ขึ้นกับตัวกรอง
-- การเข้าถึง scoped ที่ `user_id` จาก claims เสมอ — id ของผู้อื่นหรือ id ที่ไม่มีอยู่ตอบ 404 `notification_not_found` เท่ากันเพื่อซ่อนการมีอยู่
-- mark read เป็น idempotent: UPDATE เฉพาะแถวที่ `read_at IS NULL` — อ่านซ้ำคง `read_at` เดิมและตอบ 200 ด้วยแถวเดิม (schema ไม่มี `updated_at`)
-- `POST /notifications/read_all` อ่านทุก unread ของผู้ใช้ในครั้งเดียว ตอบ `{object: "notification_batch", updated: <จำนวน>}`; `DELETE /notifications` ตอบ `{object: "notification_batch", deleted: <จำนวน>}`
-- ประเภทแจ้งเตือนกำหนดโดย pgEnum `notification_type` 8 ค่า: `dmp_submitted`, `dmp_approved`, `dmp_finalized`, `tasks_generated`, `tasks_cancelled`, `proposal_superseded`, `review_requested`, `dmp_returned`
-- แถวแจ้งเตือนถูก insert ใน transaction เดียวกับ state change ของ dmps flows — ถ้า flow rollback แจ้งเตือนไม่เกิด
-- FK เป็น `ON DELETE cascade` ทั้งสามเส้น: `user_id` → users, `dmp_id` → dmps, `project_id` → projects — ลบต้นทางแล้วแจ้งเตือนถูกลบตาม
-- `read_at` เป็น nullable (ADR-0024: เป็นข้อมูล UX ไม่ใช่ record) และการลบเป็น hard delete — ไม่มี soft delete และลบแล้วหายถาวร
-- การรับแจ้งเตือนเป็นแบบ pull (ADR-0013): FE poll `GET /notifications` เอง — โมดูลนี้ไม่มี SSE channel สำหรับ notification
-- SSE event ที่ define เป็น discriminated union ใน `envelope.ts` (ADR-0018) เป็น stream ของ AI run ไม่ใช่ของ notification ประกอบด้วย event `status`, `tool`, `delta`, `proposal` ตามด้วย terminal event `done` หรือ `error` ตัวเดียว — FE ต้องเมิน event ที่ไม่รู้จัก (forward compatibility) และ `error` อาจแถม `usage` (นับโควตาแม้ fail/abort ตาม ADR-0023) กับ `resets_at` (เฉพาะ `quota_exceeded`)
+**สิทธิ์และการมองเห็น**
+
+- ทุก route อยู่ใต้ AuthGuard ระดับ global — ผู้เรียกต้อง sign in ทุกครั้งจึงผ่านได้
+- service ปฏิเสธ `role = "admin"` ทุก operation — คืน 403 `permission_denied` ("Admin has no notification access")
+- ตัวตรวจนี้คือเมธอด `ensureAllowed` — รันเป็นขั้นแรกก่อนทำอย่างอื่นเสมอ
+- ทุก query ผูกด้วย `user_id` จาก claims ของผู้เรียกเสมอ
+- การขอ id ของผู้อื่น หรือ id ที่ไม่มีอยู่จริง ตอบ 404 `notification_not_found` เท่ากัน — เพื่อซ่อนการมีอยู่ของข้อมูล
+
+**พารามิเตอร์ query**
+
+| พารามิเตอร์ | ค่าที่ยอมรับ | default |
+| --- | --- | --- |
+| `unread` | `"true"` หรือ `"false"` — แปลงเป็น boolean ให้เอง | — |
+| `limit` | จำนวนเต็ม 1–100 | 20 |
+| `starting_after` | `notification_id` ตัวสุดท้ายของหน้าก่อน | — |
+
+- ทั้งสามค่าเป็น optional — ไม่ส่ง `unread` เท่ากับไม่กรองสถานะการอ่าน
+- query ที่ละเมิดข้อใดข้อหนึ่ง ตอบ 400 `field_invalid` พร้อม JSON pointer ใน `param`
+- error รายงานเฉพาะ issue แรกที่ zod ตรวจเจอ
+
+**การเรียงลำดับและการแบ่งหน้า**
+
+- เรียงผลลัพธ์ด้วย `created_at` จากมากไปน้อย
+- ถ้า `created_at` ซ้ำกัน ใช้ `notification_id` แบบ desc ตัดสินอันดับ — บทบาทนี้เรียกว่า tiebreak
+- query ดึง `limit + 1` แถว — ได้เกิน `limit` แปลว่ามีหน้าถัดไป (`has_more = true`) แล้วจึงตัดแถวเกินออก
+- cursor ทำงานแบบ keyset — เทียบ tuple `(created_at, notification_id)` ให้น้อยกว่าคู่ของ `starting_after`
+- ถ้า id ใน `starting_after` ไม่มีอยู่จริง subquery คืน NULL การเทียบจึงไม่ตรงแถวใดเลย — หน้าว่างโดยไม่ error
+- `total_count` นับด้วยเงื่อนไขเดียวกับหน้าปัจจุบัน รวมตัวกรอง `unread` ด้วย
+- `unread_count` นับ unread ทั้งหมดของผู้ใช้เสมอ — ไม่ขึ้นกับตัวกรองใน query
+
+**สถานะการอ่านและการลบ**
+
+- mark read ทำซ้ำได้ผลลัพธ์เดิม — คุณสมบัตินี้เรียกว่า idempotent
+- UPDATE เกิดขึ้นเฉพาะแถวที่ `read_at IS NULL` — เรียกซ้ำจึงคง `read_at` เดิมและตอบ 200 ด้วยแถวเดิม
+- `read_all` ตอบ `{object: "notification_batch", updated: <จำนวน>}`
+- `DELETE /notifications` ตอบ `{object: "notification_batch", deleted: <จำนวน>}`
+- การลบลบแถวออกจากฐานข้อมูลจริง — เรียกว่า hard delete ไม่มี soft delete และข้อมูลหายถาวร
+- `read_at` เป็น nullable เพราะเป็นข้อมูลไว้ทำ UX ไม่ใช่ record (ADR-0024)
+- FK ทั้งสามเส้นเป็น `ON DELETE cascade`: `user_id` → users, `dmp_id` → dmps, `project_id` → projects
+- ลบต้นทางด้านใดด้านหนึ่ง แจ้งเตือนที่ผูกอยู่ถูกลบตามทันที
+
+**ชนิดแจ้งเตือนและจุดเขียน**
+
+- ชนิดแจ้งเตือนเก็บเป็น enum ฝั่ง PostgreSQL กำหนดโดย pgEnum `notification_type` — มี 8 ค่า: `dmp_submitted`, `dmp_approved`, `dmp_finalized`, `tasks_generated`, `tasks_cancelled`, `proposal_superseded`, `review_requested`, `dmp_returned`
+- dmps flows insert แถวแจ้งเตือนใน transaction เดียวกับ state change ของ flow นั้น — ถ้า flow rollback แจ้งเตือนไม่เกิดขึ้นด้วย
+- section `[notifications]` ใน `config.toml` ไม่มีค่า tunable — schema ประกาศเป็น `notifications: z.object({})`
 
 ## Usage
 
-Entry points สำหรับ FE (ทุก route ต้อง sign in และห้าม admin):
+Entry points ทั้งหมดเป็น HTTP — ผู้เรียกต้อง sign in และห้าม admin:
 
-- `GET /notifications` — query `unread=true|false`, `limit`, `starting_after` คืน `{object: "list", data, has_more, total_count, unread_count}`
-- `POST /notifications/:notification_id/read` — mark read รายการเดียว (idempotent)
-- `POST /notifications/read_all` — mark read ทั้งหมด
-- `DELETE /notifications/:notification_id` — ลบรายการเดียว คืน `{object: "notification", notification_id, deleted: true}`
-- `DELETE /notifications` — ลบทั้งหมด
+| Route | Purpose |
+| --- | --- |
+| `GET /notifications` | ดึง list พร้อม `unread_count` — รับ query `unread`, `limit`, `starting_after` |
+| `POST /notifications/:notification_id/read` | mark read รายการเดียว — เรียกซ้ำได้เพราะ idempotent |
+| `POST /notifications/read_all` | mark read ทุก unread ในครั้งเดียว |
+| `DELETE /notifications/:notification_id` | ลบรายการเดียว — คืน `{object: "notification", notification_id, deleted: true}` |
+| `DELETE /notifications` | ลบแจ้งเตือนทั้งหมดของผู้ใช้ |
 
-```ts
-// poll เฉพาะ unread หน้าแรก แล้วเลื่อนหน้าด้วย cursor
+```text
 GET /notifications?unread=true&limit=20
 GET /notifications?unread=true&starting_after=<notification_id ตัวสุดท้ายของหน้าก่อน>
 ```
 
-- โมดูลไม่มี service API สำหรับ feature อื่น — `NotificationsService` ถูกเรียกจาก `NotificationsController` เท่านั้น (ฝั่งเขียนใช้ `addNotifications` ของ dmps โดยตรง)
-- Prerequisites: `DATABASE_URL` พร้อม migration ตาราง `notifications` และ `JWT_SECRET` สำหรับ access token; section `notifications` ใน `config.toml` ไม่มีค่า tunable (`notifications: z.object({})`)
+- โมดูลนี้ไม่เปิด service API ให้ feature อื่น — `NotificationsService` มี controller เป็นผู้เรียกเท่านั้น
+- feature ที่ต้องการเขียนแจ้งเตือน เรียก `addNotifications` ของ dmps โดยตรง
+- Prerequisites: `DATABASE_URL` ที่ migrate สร้างตาราง `notifications` แล้ว และ `JWT_SECRET` สำหรับ access token
 
 ## Dependencies
 
 ### Internal
 
-- `features/auth` — ใช้ type `AccessClaims` (จาก `jwt.ts`) และ decorator `CurrentUser` (จาก `session.ts`) เพื่ออ่าน claims ของผู้เรียก
-- `features/dmps` — ยืม type `Db` จาก `dmps.repository.ts`; และเป็นคู่ตรงข้ามฝั่งเขียน (`addNotifications`, `approveTx` ใส่แถวแจ้งเตือนใน tx ของ flow)
-- `shared/contracts` — ใช้ `listOf` และ type `ListEnvelope` จาก `envelope.ts` สำหรับรูปแบบ response แบบ list
-- `shared/http` — ใช้ `ApiError` และ `fieldInvalid` จาก `error-envelope.ts` เพื่อยิง error envelope มาตรฐาน (ADR-0014)
-- `database` — ใช้ DI token `DB` จาก `database.module.ts` และตาราง `notifications` จาก `schema/index.ts`
-- ถูก register ที่ root เป็น `NotificationsModule` ใน `app.module.ts`
+| Module | Used in | Used for |
+| --- | --- | --- |
+| `features/auth` | controller / service | type `AccessClaims` และ decorator `@CurrentUser()` — ใช้อ่านตัวตนของผู้เรียก |
+| `features/dmps` | `notifications.repository.ts` | ยืม type `Db` มาใช้ — เป็นคู่ตรงข้ามฝั่งเขียน โดย `addNotifications` ใส่แถวแจ้งเตือนใน tx ของ flow |
+| `shared/contracts` | `notifications.service.ts` | ฟังก์ชัน `listOf` และ type `ListEnvelope` — กำหนดรูปแบบ response |
+| `shared/http` | `notifications.service.ts` | `ApiError` + `fieldInvalid` — สร้าง error envelope มาตรฐาน (ADR-0014) |
+| `database` | `notifications.repository.ts` | DI token `DB` และตาราง `notifications` |
 
 ### External packages
 
-- `@nestjs/common` (^12.3.3) — decorator `Controller`, `Injectable`, `Inject` และ HTTP verb decorators (`Get`, `Post`, `Delete`, `Query`, `Param`)
-- `drizzle-orm` (^0.45.4) — สร้าง query select/update/delete รวมถึง keyset cursor ด้วย `sql` template
-- `zod` (^3.25.76) — validate query string ผ่าน `listQuerySchema`
+| Package | Used in | Used for |
+| --- | --- | --- |
+| `@nestjs/common` | controller / service | decorators (`Controller`, `Get`, `Post`, `Delete`, `Inject`) และกลไก DI |
+| `drizzle-orm` | `notifications.repository.ts` | select/update/delete รวมถึง keyset cursor ที่เขียนด้วย `sql` template |
+| `zod` | `notifications.service.ts` | validate query string ผ่าน schema `listQuerySchema` |
 
 ### External services
 
-- PostgreSQL — เก็บตาราง `notifications` ผ่าน `DATABASE_URL` พร้อม FK ไป users/dmps/projects (หากล่ม: poll/mark read/delete ใช้ไม่ได้ และ flow ฝั่ง dmps ที่ insert แจ้งเตือน rollback ตาม)
+| Service | Used in | Used for | Impact |
+| --- | --- | --- | --- |
+| PostgreSQL | `notifications.repository.ts` | เก็บตาราง `notifications` พร้อม FK ไป users / dmps / projects | ล่ม → poll / mark read / delete ใช้ไม่ได้ทั้งหมด |
 
 ## Diagrams
 
 ### Workflow — poll รายการแจ้งเตือน
 
 ```mermaid
-flowchart TD
-    A["GET /notifications"] --> B{"claims.role = admin?"}
-    B -- "ใช่" --> C["403 permission_denied"]
-    B -- "ไม่" --> D{"listQuerySchema ผ่าน?"}
-    D -- "ไม่" --> E["400 field_invalid"]
-    D -- "ผ่าน" --> F["repo.list — กรอง user_id + unread + keyset cursor"]
-    F --> G{"ได้ rows > limit หรือไม่?"}
-    G -- "ใช่" --> H["เหลือ limit แถว, has_more = true"]
-    G -- "ไม่" --> I["has_more = false"]
-    H --> J["นับ total_count + unread_count"]
-    I --> J
-    J --> K["200 ListEnvelope + unread_count"]
-```
-
-### Sequence — poll เข้าถึงตาราง
-
-```mermaid
-sequenceDiagram
-    participant FE as Client
-    participant C as notifications.controller
-    participant S as NotificationsService
-    participant R as notifications.repository
-    participant PG as PostgreSQL
-    FE->>C: GET /notifications?unread=true
-    C->>S: list(claims, query)
-    S->>S: ensureAllowed — admin → 403
-    S->>R: list(db, sub, filters)
-    R->>PG: select ... order by created_at desc, id desc limit 21
-    PG-->>R: แถวสูงสุด 21 แถว
-    R-->>S: rows
-    S->>R: count + countUnread
-    R->>PG: count(*) สองคำสั่ง (ขนานกัน)
-    PG-->>S: total_count, unread_count
-    S-->>FE: 200 ListEnvelope + unread_count
+swimlane-beta LR
+    subgraph client [Client]
+        A[GET /notifications]
+    end
+    subgraph svc [notifications.service]
+        B{role เป็น admin?}
+        C{listQuerySchema ผ่าน?}
+        D{rows > limit?}
+    end
+    subgraph repo [notifications.repository]
+        E[list + count + countUnread]
+    end
+    subgraph res [Response]
+        F[403 permission_denied]
+        G[400 field_invalid]
+        H[200 ListEnvelope + unread_count]
+    end
+    A --> B
+    B -->|ใช่| F
+    B -->|ไม่| C
+    C -->|ไม่| G
+    C -->|ผ่าน| E
+    E --> D
+    D -->|ใช่ — ตัดเหลือ limit, has_more = true| H
+    D -->|ไม่ — has_more = false| H
 ```
 
 ### Lifecycle — สถานะของแถว notification
@@ -127,7 +169,12 @@ stateDiagram-v2
     [*] --> unread: insert ใน tx ของ dmps flow (addNotifications)
     unread --> read: markRead / read_all — set read_at
     read --> read: markRead ซ้ำ — idempotent คง read_at เดิม
-    unread --> deleted: deleteOne / deleteAll
-    read --> deleted: deleteOne / deleteAll
-    deleted --> [*]: cascade จาก users/dmps/projects ก็ถึงจุดจบเช่นกัน
+    unread --> [*]: DELETE — hard delete
+    read --> [*]: DELETE — hard delete (cascade จาก users/dmps/projects ก็ถึงจุดจบเช่นกัน)
 ```
+
+## Observations on the source
+
+- ต้นฉบับเขียนว่า section `[notifications]` ใน `config.toml` "ว่างเปล่า" — แต่ไฟล์จริงมี `_appliesTo = ["src/features/notifications/"]` อยู่ใน section นั้น จึงไม่ว่างเปล่าทั้งก้อน
+- ข้อสรุป "ไม่มีค่า tunable" ยังถูกต้อง เพราะ schema ประกาศ `notifications: z.object({})` และโค้ดไม่มีการอ่าน `_appliesTo` แต่อย่างใด
+- comment ใน `config.toml` บรรทัดเดียวกันระบุว่า notifications เป็น "SSE/polling ตาม ADR-0024" — ขัดกับ ADR-0013 (notification-polling) ซึ่งเป็นตัวตัดสิน polling และตัด SSE ออก จึงน่าเป็น comment ที่ล้าสมัย
