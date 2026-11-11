@@ -37,7 +37,7 @@
 
 ### Phase 3: Wiring & Retrieval
 - [x] Task 6: upload fast path + fallback flag (`files.service.ts`, config knob, `docs/api/files.md`, e2e)
-- [ ] Task 7: VLM caption best-effort (config-gated, mock client ใน test)
+- [x] Task 7: VLM caption best-effort (config-gated, mock client ใน test) — model = `qwen/qwen3-vl-30b-a3b-instruct` (ผู้ใช้เลือก, ต่างจาก default เดิมที่วางไว้)
 - [ ] Task 8: parent-expansion helper + `read_proposal` ใช้ section เต็ม
 - [ ] Task 9: golden QA integration suite (hit@5/MRR threshold)
 

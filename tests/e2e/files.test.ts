@@ -8,6 +8,8 @@ import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "@/app.module.js";
 import { createDb } from "@/database/client.js";
+import { AI_CLIENT } from "@/shared/ports/ai-client.js";
+import { MockAiClient } from "@/shared/adapters/mock-ai/mock-ai-client.js";
 import { credentials, dmps, fileChunks, fileRecords, projects, users } from "@/database/schema/index.js";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/uni";
@@ -47,7 +49,11 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
     process.env.JWT_SECRET ??= "e2e-secret";
     const { loadConfig } = await import("@/shared/config/index.js");
     await loadConfig();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    // caption ของ fast path ต้อง deterministic — AI_CLIENT เป็น mock (ไม่ยิง OpenRouter; usage canned 132/call)
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(AI_CLIENT)
+      .useValue(new MockAiClient())
+      .compile();
     app = moduleRef.createNestApplication();
     await app.init();
     await cleanup();
@@ -235,6 +241,17 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
       expect(c.meta).toHaveProperty("field_id");
       expect(c.headingPath).not.toBeNull();
     }
+
+    // VLM caption (Task 7): ฟิลด์ research_framework ได้ chunk จาก caption — คำถาม prefix + คำตอบ mock
+    const imgChunk = ffChunks.find((c) => (c.meta as { field_id?: string } | null)?.field_id === "research_framework");
+    expect(imgChunk).toBeDefined();
+    expect(imgChunk?.content.startsWith("กรอบการวิจัย/พัฒนา (แผนภาพ)")).toBe(true);
+    expect(imgChunk?.content).toContain("vlm_caption"); // marker ของ MockAiClient — caption ไหลผ่าน flow จริง
+    expect(imgChunk?.headingPath).toContain("ส่วนที่ 2");
+
+    // usage ของ caption นับโควตาผู้อัปโหลด (ADR-0023) — mock usage คงที่ ceil(50 + (100-20) + 20×0.1) = 132/รูป
+    const [quota] = await db.select({ used: users.aiTokenUsed }).from(users).where(eq(users.username, USER.username));
+    expect(quota.used).toBe(132);
 
     // docx ธรรมดา → fallback generic เดิม + flag false + chunks ไม่มี meta (regression)
     const plain = await request(app.getHttpServer())

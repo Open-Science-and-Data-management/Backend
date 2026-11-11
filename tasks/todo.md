@@ -59,10 +59,11 @@
   - Depends: Tasks 4-5
   - Scope: Medium
 
-- [ ] Task 7: VLM caption best-effort
-  - Acceptance: config `[files.rag] vlmModel` (ค่าว่าง = ปิด); caption รูปตอน ingest → text chunk ของ field นั้น; quota หมด/ยิงพลาด → skip + warn, upload ไม่ fail; นับเข้าโควตาผู้อัปโหลด (reconcile เดิม ADR-0023)
-  - Verify: unit ด้วย mock client (mock-client pattern จาก tests/unit/ai) — quota หมด → ไม่มี caption chunk + `form_parsed: true` ยังคงเดิม
-  - Files: `src/features/files/form-extract.ts` (หรือ caption module ใหม่), `src/shared/config/index.ts` + `config.toml`, unit test
+- [x] Task 7: VLM caption best-effort
+  - Acceptance: config `[files.rag] vlmModel` (ค่าว่าง = ปิด) — ตั้ง `qwen/qwen3-vl-30b-a3b-instruct` ตามผู้ใช้เลือก; caption รูปตอน ingest → text chunk ของ field นั้น; quota หมด/ยิงพลาด → skip + warn, upload ไม่ fail; นับเข้าโควตาผู้อัปโหลด (reconcile เดิม ADR-0023)
+  - Done: port `AiMessage` รับ image parts + `AiCompleteParams.model` override (`ai-client.ts`, OpenRouter adapter, MockAiClient); `readDocxImage` (docx-form, png/jpeg/gif/webp — emf/wmf → null); `ExtractedField.caption` + image branch ใน `fieldsToChunks`; `captionImages` ใน files.service (AI_CLIENT provider ใน FilesModule — import AiModule ไม่ได้เพราะ AiModule → FilesModule)
+  - Verify: unit 258 เขียว (mock-client multipart, readDocxImage, image-chunk) + `tests/e2e/files.test.ts` 5/5 (override AI_CLIENT เป็น mock — research_framework ได้ chunk caption + quota = 132/call บน Postgres จริง)
+  - Files: `src/shared/ports/ai-client.ts`, `src/shared/adapters/open-router/open-router-client.ts`, `src/shared/adapters/mock-ai/mock-ai-client.ts`, `src/shared/config/index.ts` + `config.toml`, `src/features/files/{docx-form,form-extract,chunking,files.service,files.module}.ts`, tests
   - Depends: Task 6
   - Scope: Medium
 

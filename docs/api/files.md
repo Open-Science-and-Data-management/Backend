@@ -146,6 +146,8 @@ curl http://localhost:3000/projects/01948f2a-1c3b-7e5a-9f2c-8b4d1e2f3a4b/files \
 
 `form_parsed` (boolean, เฉพาะ upload response — response-only): `true` เมื่อ ingest ผ่าน fast path FF2569 (chunks เก็บ `meta`), `false` เมื่อ fallback generic path (เอกสารไม่ตรง schema หรือ parse พัง — อัปโหลดยังสำเร็จปกติ)
 
+**VLM caption** (SPEC ff2569 Task 7): ใน fast path, ฟิลด์แบบ image (เช่น กรอบการวิจัย) ถูกส่งให้โมเดล vision (`config.toml` → `[files.rag] vlmModel`, ตั้งค่าว่างเพื่อปิด) เพื่อทำ caption แล้วเก็บเป็น chunk ของฟิลด์นั้น (คำถามของฟอร์มติดหัว chunk เหมือนฟิลด์อื่น) — best-effort: quota หมด / ยิงพลาด / รูปเป็นฟอร์แมตที่โมเดลไม่รองรับ (เช่น emf) → ข้าม caption แล้ว warn ใน log, upload ไม่ fail; usage นับเข้าโควตา AI ของผู้อัปโหลดผ่าน reconcile เดิม (ADR-0023)
+
 ### Errors
 
 | Status | When it happens                                                                        |
