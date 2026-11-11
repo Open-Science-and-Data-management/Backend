@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
-import { loadConfig } from "@/shared/config/index.js";
+import { config, loadConfig } from "@/shared/config/index.js";
 import { createDb } from "@/database/client.js";
 import { fileChunks, fileRecords, projects } from "@/database/schema/index.js";
 import { AppModule } from "@/app.module.js";
@@ -96,7 +96,7 @@ describe.skipIf(!dbReady)("rag pipeline (integration)", () => {
 
     const chunks = await db.select().from(fileChunks).where(sql`file_id = ${file.file_id}`).orderBy(fileChunks.chunkIndex);
     expect(chunks.length).toBeGreaterThan(0);
-    expect(chunks[0].embeddingModel).toBe("Xenova/multilingual-e5-large");
+    expect(chunks[0].embeddingModel).toBe(config().files.rag.embeddingModel);
     for (const c of chunks) {
       expect(c.embedding).not.toBeNull();
       expect(c.embedding?.length).toBe(1024);
@@ -137,7 +137,7 @@ describe.skipIf(!dbReady)("rag pipeline (integration)", () => {
     expect(results[0].content.toLowerCase()).toContain("genomic");
     const chunks = await db.select().from(fileChunks).where(sql`file_id = ${file.file_id}`);
     for (const c of chunks) {
-      expect(c.embeddingModel).toBe("Xenova/multilingual-e5-large");
+      expect(c.embeddingModel).toBe(config().files.rag.embeddingModel);
       expect(c.embedding).not.toBeNull();
     }
   }, 300_000);

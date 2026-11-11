@@ -39,13 +39,17 @@ storagePath = "data/files"
 #   chunkOverlapPercent — % ทับซ้อนระหว่าง chunk กันความหมายถูกตัดครึ่ง (0 = ไม่ทับ)
 #   topK — จำนวน chunk ที่คืนต่อ query (search_proposal)
 #   embeddingModel — โมเดล ONNX บน HF (TransformersEmbedding, fp16/CUDA ก่อน fallback CPU q8 — ADR-0028);
-#     เปลี่ยนรุ่น = vector เดิมใช้ไม่ได้ ต้อง re-embed ทุกไฟล์ (dims ต้องตรง schema)
+#     เปลี่ยนรุ่น = vector เดิมใช้ไม่ได้ ต้อง re-embed ทุกไฟล์ (dims ต้องตรง schema) — re-embed ผูกกับ
+#     `embedding_model` mismatch ต่อไฟล์ (เกิดเองตอน retrieve)
 chunkTargetTokens = 450
 #   chunkTableMaxTokens — cap ขนาด chunk ตาราง (tokens) — เกิน → ตารางแตก part i/n ตัดที่ขอบแถว (Rev 2, D7)
 chunkTableMaxTokens = 4096
 chunkOverlapPercent = 10
 topK = 5
-embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large-instruct ไม่มี onnx บน HF — ใช้ quantized เทียบเท่า 1024 dims (ADR-0028)
+embeddingModel = "onnx-community/Qwen3-Embedding-0.6B-ONNX" # Qwen3 0.6B fp16/CUDA (ladder เดิม) — last-token pooling, query มี instruction prefix, 1024 dims (ADR-0031); re-embed อัตโนมัติเมื่อ model mismatch; Qdrant/...-onnx ไม่มี fp16 (FastEmbed-only) เลยต้อง repo นี้
+#   embeddingMaxTokens — cap ความยาว input embedding (tokenizer truncate) — เครื่อง deploy RAM น้อย = ลดค่านี้
+#     (worst-case activation ~ batch×cap²; e5 ตัดที่ 512 เสมอไม่ว่าค่านี้)
+embeddingMaxTokens = 1024
 #   formFastPath — true = docx ที่ตรง schema FF2569 ingest แบบ parse OOXML ตรง (SPEC ff2569):
 #     chunk ระดับ field, คำถามติดทุก chunk, meta jsonb — match ไม่ครบพอ → fallback generic เดิม + form_parsed: false
 #     false = ปิด fast path ทั้งหมด อัปโหลดผ่าน generic path เสมอ

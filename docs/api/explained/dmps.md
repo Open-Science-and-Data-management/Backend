@@ -36,25 +36,35 @@
 ## วงจรชีวิตของแผน
 
 ```mermaid
-flowchart TD
-    A[สร้างแผน: draft] -->|Submit<br/>institutional| B[version 1: pending]
-    B -->|Approve| C[approved — version ใช้บังคับ<br/>+ ปรับ tasks]
-    B -->|Reject พร้อมเหตุผล| A
-    C -->|แก้เล็ก: minor edits| C
-    C -->|แก้ใหญ่: Submit a revision| B2[version ใหม่: pending]
-    B2 -->|Approve| C
-    B2 -->|Reject| C
-    A -->|Finalize<br/>independent| C2[approved ทันที<br/>+ สร้าง tasks ชุดแรก]
-    C -.->|archive ไม่ได้ มี version ใช้บังคับ| X[preservation]
-    A -.->|archive ได้| X2[ซ่อนจากรายการ ลบไม่ได้]
+stateDiagram-v2
+    direction LR
+    [*] --> D: POST /dmps<br/>(สร้างแผน)
+
+    state "draft — กำลังเขียน<br/>(ยังไม่เคยส่ง)" as D
+    state "pending — รอกรรมการ" as P
+    state "approved — ใช้บังคับอยู่" as A
+    state "archived — ซ่อนออกจากรายการ" as X
+
+    D --> D: PUT /:dmpId/draft (บันทึก)<br/>POST /draft/restore¹ · /draft/discard¹
+    D --> P: POST /submit<br/>(institutional + ผ่าน checklist)
+    D --> A: POST /finalize<br/>(independent + ผ่าน checklist)
+    P --> A: POST /versions/:n/approve<br/>(กรรมการเท่านั้น)
+    P --> D: POST /versions/:n/reject<br/>(กรรมการ + ต้องใส่ note)²
+    A --> P: POST /revisions<br/>(ไม่มี pending ค้าง)
+    A --> A: POST /minor-edits<br/>(เฉพาะแก้เล็ก ไม่ผ่านกรรมการ)
+    D --> X: POST /archive³
+    X --> D: POST /unarchive
 ```
 
-อ่านเป็นสองทาง:
+ทุกเส้นบน diagram คือ "endpoint ที่ใช้ได้เมื่อแผนอยู่สถานะนั้น" — ยิง endpoint ผิดสถานะเมื่อไร จะเจอ error 409 ตามตาราง errors ของ endpoint นั้นทันที
 
-- **institutional** — เขียน draft เสร็จ → Submit เป็น version 1 สถานะ `pending` → กรรมการ **approve** (แผนใช้บังคับได้) หรือ **reject** (ต้องใส่เหตุผล แผนกลับไปแก้ต่อ) พอมี version ใช้บังคับแล้ว แก้เล็กๆ ผ่าน minor edits ได้เลย แต่แก้ใหญ่ต้องส่ง version ใหม่ — และส่งค้างได้ทางเดียว มี `pending` ค้างอยู่จะส่งซ้ำไม่ได้ (`revision_pending`)
-- **independent** — ไม่มีกรรมการ กด Finalize เอง แผนเป็น `approved` ทันทีและสร้างงานชุดแรกให้เลย
+**เงื่อนไขประตูที่ไม่ได้อยู่บนเส้น (เจอเป็น error):**
 
-ทั้ง Submit และ Finalize จะตรวจ checklist (`validateDraft`) ก่อนเสมอ — เขียนไม่ครบ เช่น ไม่มี dataset เลย จะได้ 422 `plan_incomplete` พร้อมรายการข้อที่ขาด
+- ทุก endpoint ที่ตัดสินจาก draft (update/restore/discard/submit/revisions/minor-edits/finalize) ต้องแนบ `draft_revision` ให้ตรงกับปัจจุบันเสมอ — ไม่ตรง → `409 draft_conflict` ตัดหน้าเงื่อนไขอื่นหมด
+- Submit/Finalize ตรวจ checklist (`validateDraft`) ก่อนเสมอ — เขียนไม่ครบ เช่น ไม่มี dataset เลย → `422 plan_incomplete` พร้อมรายการข้อที่ขาด
+- ¹ discard: ต้องเคยส่งแผนแล้วอย่างน้อยหนึ่งครั้ง ไม่งั้น `409 never_submitted` · restore: ห้าม restore version ที่ยัง `pending` (`409 version_pending`)
+- ² reject ส่งแผนกลับไป `draft` เมื่อยังไม่มี version ใช้บังคับ แต่ถ้ามีแล้ว แผนคงอยู่ `approved` (version เก่ายังใช้อยู่ ไม่ใช่กลับ draft)
+- ³ archive ใช้ได้เมื่อไม่มี version ใช้บังคับ — มีอยู่ → `409 plan_in_force` (tasks/evidence ยังเป็นหลักฐาน)
 
 ## draft_revision — ตัวนับกันเขียนทับ (อธิบายละเอียด)
 
@@ -184,3 +194,29 @@ flowchart TD
 | `archive` / `unarchive` | archive repository (ซ่อนอ่านอย่างเดียว ไม่ลบ) |
 
 ไม่มี endpoint ไหนซ้ำหน้าที่ตัวไหน — ซ้ำได้แค่ "คำ" ในชื่อ แต่คำถามที่แต่ละตัวตอบต่างกันหมด
+
+## แผนถูกเก็บไว้ที่ไหนใน database
+
+ใน API เรียกว่า "plan" แต่ใน database ตารางชื่อ **`dmps`** — อย่าค้นหาด้วยคำว่า plans แล้วเผลอคิดว่าไม่มี นิยามอยู่ที่ `src/database/schema/index.ts` (สร้างจริงโดย migration ใน `src/database/migrations/`)
+
+โครงสร้าง 3 ตาราง:
+
+| ตาราง | เก็บอะไร | คอลัมน์สำคัญ |
+|---|---|---|
+| `dmps` | แผน — แถวเดียวต่อแผนหนึ่ง | `draft` (**JSONB** = เนื้อหา maDMP ทั้งก้อน รวม dataset/contributor/cost ที่ nested อยู่ข้างใน), `draft_revision`, `status`, `archived_at`, `active_version` |
+| `dmp_versions` | ทุก version ที่เคย submit/finalize | `snapshot` (JSONB เนื้อหา ณ ตอนนั้น), `status`, `changes`, `decision_note` |
+| `tasks` | งานที่ระบบ generate จาก dataset ในแผน | FK (`dmp_id`) ชี้กลับไปที่ `dmps` |
+
+จุดที่มือใหม่สับสนบ่อย:
+
+- **ไม่มีตาราง `drafts` หรือ `datasets` แยก** — เนื้อหา draft อยู่ในคอลัมน์ JSONB เดียว (`dmps.draft`) เหตุผลคือ draft เป็นก้อนเดียวที่ autosave ทั้งก้อนทุกครั้ง (ADR-0020) ไม่จำเป็นต้องแยกเป็นแถวๆ
+- **"ลบไม่ได้" ในทางปฏิบัติ** = ไม่มีโค้ดไหนรัน `DELETE FROM dmps` เลย — ปลายทางเดียวคือ set `archived_at` ให้แผนหลุดจากรายการปกติ แถม `dmp_versions` ตั้ง FK เป็น `ON DELETE CASCADE` ชี้มาที่แผน แปลว่าถ้าบังคับลบแผน version/หลักฐานทั้งหมดจะหายตาม จึงห้ามลบตั้งแต่ต้น
+- กฎ "หนึ่ง pending ต่อแผน" ไม่ได้บังคับในโค้ดอย่างเดียว แต่เป็น **unique index ที่ Postgres เฝ้าไว้เอง** (`dmp_versions_one_pending_uq` — unique เฉพาะแถวที่ `status = 'pending'`) แม้โค้ดพลาด ฐานข้อมูลก็จะปฏิเสธแถวซ้ำเอง
+
+## แก้ draft แล้วเข้า `dmp_versions` ไหม?
+
+**ไม่เข้า** — ตราบใดที่แผนยังเป็น draft อยู่ การแก้ผ่าน `PUT /dmps/:dmpId/draft` (รวม discard/restore ด้วย) จะแตะแค่ **แถวเดียวใน `dmps`**: อัปเดตคอลัมน์ `draft` (JSONB ทับของเดิม) และ `draft_revision` +1 แถวใน `dmp_versions` ถูกสร้างเฉพาะ 3 จังหวะ — **submit** (ครั้งแรก), **submit a revision** (รอบถัดไป), **finalize** (independent) — ตอนนั้น draft จะถูก "แช่แข็ง" เป็น `snapshot` ลง version
+
+ข้อยกเว้นเดียวที่แตะ `dmp_versions` โดยไม่สร้างแถวใหม่: **minor-edits** — fold เนื้อหาใหม่เข้า version ที่ใช้บังคับอยู่เดิม (แถวเดิม คอลัมน์ `minor_edits` อัปเดต)
+
+ผลข้างเคียงที่ควรรู้: แผนที่ยังเป็น draft ถ้าเขียนทับหลายรอบ เนื้อหาเก่าจะ **หายถาวร** เพราะไม่มี snapshot เก็บไว้ — ประวัติเริ่มจดจริงเมื่อ submit ครั้งแรกเท่านั้น การ discard/restore ย้อนได้เฉพาะกลับไป snapshot จาก version ที่เคยส่งแล้ว แผนที่ไม่เคยส่งเลยจะ discard ไม่ได้ด้วยซ้ำ (409 `never_submitted` — เพราะไม่มีจุดกลับให้ไป)

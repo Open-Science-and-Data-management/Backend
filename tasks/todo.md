@@ -67,14 +67,14 @@
   - Depends: Task 6
   - Scope: Medium
 
-- [ ] Task 8: parent-expansion helper + `read_proposal`
+- [x] Task 8: parent-expansion helper + `read_proposal`
   - Acceptance: helper ขยาย hit → chunks ทั้ง section (ผ่าน `meta.parent_chunk_index`); `read_proposal` (ai.tools) ใช้ helper — `FilesService.retrieve` เดิมยังคงพฤติกรรม flat top-k เป๊ะ
   - Verify: `pnpm test -- tests/integration/rag.test.ts` (เพิ่ม case: expand ได้ section เต็ม, retrieve เดิม output เท่าเดิม)
   - Files: `src/features/files/files.service.ts` (หรือ `retrieval.ts`), `src/features/ai/ai.tools.ts`, `tests/integration/rag.test.ts`
   - Depends: Tasks 5-6
   - Scope: Medium
 
-- [ ] Task 9: golden QA suite
+- [x] Task 9: golden QA suite
   - Acceptance: ~30-50 QA ครอบทุก section ของ FF fixture (คำถามเชิง field + เชิงเนื้อหา) วัด hit@5/MRR ผ่าน `FilesService.retrieve` — รายงาน metric ใน output
   - Verify: `pnpm test -- tests/integration` — suite เขียวที่ threshold hit@5 ≥ 0.8
   - Files: `tests/integration/rag-golden.test.ts` (ใหม่), fixture QA data file

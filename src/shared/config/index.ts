@@ -24,6 +24,9 @@ const configSchema = z.object({
       chunkOverlapPercent: z.number().int().nonnegative(),
       topK: z.number().int().positive(),
       embeddingModel: z.string(),
+      // cap ความยาว input ของ embedding (tokenizer-level) — กัน activation seq² บนเครื่อง RAM น้อย;
+      // e5 ตัดที่ 512 เสมอ (ขีดจำกัดโมเดล), Qwen3 ใช้ค่านี้ตรง (ADR-0031)
+      embeddingMaxTokens: z.number().int().positive().default(1024),
       formFastPath: z.boolean().default(true),
       // slug ของ VLM บน OpenRouter สำหรับ caption รูป (SPEC ff2569 Task 7) — ว่าง = ปิด caption
       vlmModel: z.string().default(""),
