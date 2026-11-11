@@ -4,14 +4,14 @@
 
 ## Phase 1: Foundation
 
-- [ ] Task 1: FF2569 fixture + template schema
+- [x] Task 1: FF2569 fixture + template schema
   - Acceptance: `src/features/files/templates/ff2569.ts` export template (`template_version: "FF2569"`) ครบทุก section/field ตาม spec §2 — Zod types, canonical English field IDs, enum values, ข้อความคำถาม (ต่อ field), โครง `subactivity[1..3]` เป็น array
   - Acceptance: fixture `tests/fixtures/ff2569-proposal.docx` (copy จาก docs/research)
   - Verify: `pnpm test -- tests/unit/files` (test ใหม่ `ff2569-template.test.ts`: field IDs unique, enum values ครบ, ทุก field มี question text) + `pnpm typecheck`
   - Files: `src/features/files/templates/ff2569.ts`, `tests/unit/files/ff2569-template.test.ts`, `tests/fixtures/ff2569-proposal.docx`
   - Scope: Small
 
-- [ ] Task 2: OOXML raw extractor `parseDocxForm`
+- [x] Task 2: OOXML raw extractor `parseDocxForm`
   - Acceptance: อ่าน document.xml ผ่าน jszip → raw blocks `{paragraphs, tables (รวม state cell), checkboxes พร้อม w14:checked, images}` — deterministic, ไม่ใช้ glyph guessing
   - Acceptance: block scanner แยก `<w:p>` / `<w:tbl>` ที่ flatten ได้ถูกต้อง ไม่พึ่ง heading style
   - Verify: `pnpm test -- tests/unit/files` (test: บน fixture — ตาราง = 11, checkbox = 154, ตัวอย่าง state ☒ ถูกอ่านเป็น true)
@@ -20,12 +20,12 @@
   - Scope: Medium
 
 ### Checkpoint: Foundation
-- [ ] `pnpm test -- tests/unit/files` + `pnpm typecheck` เขียว
-- [ ] ตรวจ fixture counts: 11 ตาราง / 154 checkbox
+- [x] `pnpm test -- tests/unit/files` + `pnpm typecheck` เขียว
+- [x] ตรวจ fixture counts: 11 ตาราง / 77 checkbox content control (154 tag)
 
 ## Phase 2: Core Extraction & Chunking
 
-- [ ] Task 3: fields extractor (`form-extract.ts`)
+- [x] Task 3: fields extractor (`form-extract.ts`)
   - Acceptance: raw blocks + template → `Ff2569Fields` — tolerant matching (หัวข้อ fuzzy, ไม่ใช้เลขข้อตรง), checkbox → enum canonical values, boilerplate (ตัวเลือกไม่ติ๊ก/หมายเหตุฟอร์ม) แยกออกจากคำตอบ, subactivity ×3 จับเป็น array, ส่วนที่ match ไม่ได้ → รายงาน per-block miss
   - Verify: `pnpm test -- tests/unit/files` (fixture: ทุก field มีค่าหรือ null ชัดเจน, enum `plan_type = technology_development`, `subactivity.length === 3`, miss list = 0)
   - Files: `src/features/files/form-extract.ts`, `tests/unit/files/form-extract.test.ts`

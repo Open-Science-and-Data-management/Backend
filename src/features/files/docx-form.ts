@@ -5,15 +5,20 @@ import JSZip from "jszip";
 export interface FormTable {
   rows: string[][];
 }
+// block = ordinal ของ block ในเอกสาร (นับทั้ง <w:p> และ <w:tbl> ตามลำดับ) — ใช้จับตำแหน่ง checkbox/รูปเทียบย่อหน้า
 export interface FormCheckbox {
   label: string;
   checked: boolean;
+  block: number;
 }
 export interface RawFormDocument {
   paragraphs: string[]; // ข้อความ body ตามลำดับ — ไม่รวมข้อความในตาราง
+  paragraphBlocks: number[]; // block ordinal ของแต่ละย่อหน้า (ขนาดเท่า paragraphs)
   tables: FormTable[]; // ตามลำดับในเอกสาร
+  tableBlocks: number[]; // block ordinal ของแต่ละตาราง
   checkboxes: FormCheckbox[]; // ทุกจุดในเอกสาร (body + ในตาราง) ตามลำดับ
   images: string[]; // r:embed rIds ตามลำดับ
+  imageBlocks: number[]; // block ordinal ของแต่ละรูป
   rels: Record<string, string>; // rId → target (เช่น "media/image1.png")
 }
 
@@ -42,8 +47,8 @@ function textOf(xml: string): string {
 }
 
 /** จับ checkbox ทั้งหมดใน block — state จาก w14:checked, label = ข้อความ block ตัด glyph ทิ้ง */
-function checkboxesIn(xml: string, label: string): FormCheckbox[] {
-  const out: FormCheckbox[] = [];
+function checkboxesIn(xml: string, label: string): Omit<FormCheckbox, "block">[] {
+  const out: Omit<FormCheckbox, "block">[] = [];
   // label ตัด glyph ☒/☐ ที่ฝังมากับ w:sym ออก — state จริงอยู่ที่ w14:checked เท่านั้น
   const clean = label.replace(/[☒☐☑□£]/g, " ").replace(/\s+/g, " ").trim();
   for (const m of xml.matchAll(/<w14:checkbox>[\s\S]*?<w14:checked w14:val="(\d)"/g)) out.push({ label: clean, checked: m[1] === "1" });
@@ -64,7 +69,7 @@ function closeOf(xml: string, start: number, tag: string): number {
     const o = open.lastIndex > 0 && open.lastIndex > i ? (open.lastIndex = i, open.exec(xml)) : open.exec(xml);
     const c = xml.indexOf(close, i);
     if (c === -1) return xml.length;
-    if (o !== null && o.index !== undefined && o.index < c) {
+    if (o !== null && o.index < c) {
       depth += 1;
       i = o.index + o[0].length;
       open.lastIndex = i;
@@ -77,17 +82,18 @@ function closeOf(xml: string, start: number, tag: string): number {
   return xml.length;
 }
 
-function parseTable(tblXml: string, checkboxes: FormCheckbox[]): FormTable {
+function parseTable(tblXml: string, checkboxes: FormCheckbox[], block: number, tableBlocks: number[]): FormTable {
   const rows: string[][] = [];
   for (const tr of tblXml.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g)) {
     const cells: string[] = [];
     for (const tc of tr[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)) {
       const cellText = textOf(tc[0]);
-      checkboxes.push(...checkboxesIn(tc[0], cellText));
+      for (const cb of checkboxesIn(tc[0], cellText)) checkboxes.push({ ...cb, block });
       cells.push(cellText);
     }
     rows.push(cells);
   }
+  tableBlocks.push(block);
   return { rows };
 }
 
@@ -109,9 +115,13 @@ export async function parseDocxForm(data: Buffer): Promise<RawFormDocument> {
   const body = bodyStart === -1 ? xml : xml.slice(bodyStart + 8, bodyEnd === -1 ? xml.length : bodyEnd);
 
   const paragraphs: string[] = [];
+  const paragraphBlocks: number[] = [];
   const tables: FormTable[] = [];
+  const tableBlocks: number[] = [];
   const checkboxes: FormCheckbox[] = [];
   const images: string[] = [];
+  const imageBlocks: number[] = [];
+  let block = 0;
 
   let i = 0;
   while (i < body.length) {
@@ -125,19 +135,27 @@ export async function parseDocxForm(data: Buffer): Promise<RawFormDocument> {
 
     if (nextTbl < nextP) {
       const end = closeOf(body, nextTbl, "w:tbl");
-      tables.push(parseTable(body.slice(nextTbl, end), checkboxes));
+      tables.push(parseTable(body.slice(nextTbl, end), checkboxes, block, tableBlocks));
       i = end;
+      block += 1;
       continue;
     }
     const end = body.indexOf("</w:p>", nextP);
     const pEnd = end === -1 ? body.length : end + 6;
     const pXml = body.slice(nextP, pEnd);
     const text = textOf(pXml);
-    for (const blip of pXml.matchAll(/<a:blip[^>]*r:embed="([^"]+)"/g)) images.push(blip[1]);
-    checkboxes.push(...checkboxesIn(pXml, text));
-    if (text.length > 0) paragraphs.push(text);
+    for (const blip of pXml.matchAll(/<a:blip[^>]*r:embed="([^"]+)"/g)) {
+      images.push(blip[1]);
+      imageBlocks.push(block);
+    }
+    for (const cb of checkboxesIn(pXml, text)) checkboxes.push({ ...cb, block });
+    if (text.length > 0) {
+      paragraphs.push(text);
+      paragraphBlocks.push(block);
+    }
     i = pEnd;
+    block += 1;
   }
 
-  return { paragraphs, tables, checkboxes, images, rels };
+  return { paragraphs, paragraphBlocks, tables, tableBlocks, checkboxes, images, imageBlocks, rels };
 }

@@ -1,5 +1,6 @@
 // ff2569 template — schema ฟอร์ม Full Proposal FF2569 (ตายตัว) — single source of truth ของการ map เอกสารเข้า field
 // เลขข้อในเอกสารซ้ำ/เพี้ยน (10. ซ้ำ, ข้อ 4/6 หาย) จึงห้ามใช้เป็น ID — parser/extractor อิง fieldId จากไฟล์นี้เท่านั้น
+// ลำดับ field = ลำดับในเอกสาร (extractor เดิน sequential ตาม cursor)
 // (Q1/Q11/Q12 — docs/specs/SPEC-ff2569-form-rag.md, docs/research/ff2569-form-rag-structure.md §1.1)
 import { z } from "zod";
 
@@ -20,6 +21,8 @@ export const templateChildSchema = z.object({
   type: z.enum(["text", "long_text", "list", "enum", "bool", "table", "image"]),
   options: z.array(templateOptionSchema).optional(),
   tableColumns: z.array(z.string().min(1)).optional(),
+  // marker บรรทัดคำตอบ — สำหรับคำถามพี่น้องที่ตัวคำถามแยกกันไม่ได้ (title_th/en, keywords_th/en) แต่บรรทัดคำตอบขึ้นต้นด้วย marker ชัด ๆ
+  answerMarker: z.string().min(1).optional(),
 });
 export type TemplateChild = z.infer<typeof templateChildSchema>;
 
@@ -30,6 +33,7 @@ export const templateFieldSchema = z.object({
   type: z.enum(["text", "long_text", "list", "enum", "bool", "table", "image"]),
   options: z.array(templateOptionSchema).optional(),
   tableColumns: z.array(z.string().min(1)).optional(),
+  answerMarker: z.string().min(1).optional(),
   children: z.array(templateChildSchema).optional(),
   repeats: z.number().int().min(2).optional(),
 });
@@ -57,12 +61,12 @@ const sections: TemplateSection[] = [
   { id: "s4_outputs", title: "ส่วนที่ 4 ผลผลิต/ผลลัพธ์/ผลกระทบ" },
 ];
 
-// ── fields ───────────────────────────────────────────────────────────────────
+// ── fields (ลำดับตามเอกสาร) ──────────────────────────────────────────────────
 const fields: TemplateField[] = [
   // s0 หัวฟอร์ม
-  { fieldId: "institution", sectionId: "s0_header", question: "ชื่อหน่วยงาน", type: "text" },
-  { fieldId: "fiscal_year", sectionId: "s0_header", question: "ปีงบประมาณ", type: "text" },
-  { fieldId: "fund_type", sectionId: "s0_header", question: "ประเภททุน/แบบฟอร์มข้อเสนอโครงการ", type: "text" },
+  { fieldId: "fund_type", sectionId: "s0_header", question: "แบบฟอร์มข้อเสนอโครงการ (ประเภททุน)", type: "text" },
+  { fieldId: "fiscal_year", sectionId: "s0_header", question: "ปีงบประมาณ", type: "text", answerMarker: "ปีงบประมาณ" },
+  { fieldId: "institution", sectionId: "s0_header", question: "ชื่อหน่วยงาน", type: "text", answerMarker: "ชื่อหน่วยงาน" },
 
   // s1 ข้อมูลทั่วไป
   {
@@ -77,8 +81,8 @@ const fields: TemplateField[] = [
       { value: "technology_development", labels: ["การพัฒนาวิทยาศาสตร์เทคโนโลยี (Technology Development)"] },
     ],
   },
-  { fieldId: "title_th", sectionId: "s1_general", question: "ชื่อโครงการวิจัยและนวัตกรรม (ภาษาไทย)", type: "text" },
-  { fieldId: "title_en", sectionId: "s1_general", question: "ชื่อโครงการวิจัยและนวัตกรรม (ภาษาอังกฤษ)", type: "text" },
+  { fieldId: "title_th", sectionId: "s1_general", question: "ชื่อโครงการวิจัยและนวัตกรรม (ภาษาไทย)", type: "text", answerMarker: "(ภาษาไทย)" },
+  { fieldId: "title_en", sectionId: "s1_general", question: "ชื่อโครงการวิจัยและนวัตกรรม (ภาษาอังกฤษ)", type: "text", answerMarker: "(ภาษาอังกฤษ)" },
   {
     fieldId: "research_type",
     sectionId: "s1_general",
@@ -161,8 +165,8 @@ const fields: TemplateField[] = [
     ],
   },
   { fieldId: "other_funding_detail", sectionId: "s1_general", question: "หน่วยงานและปีงบประมาณที่ยื่นขอรับทุน", type: "text" },
-  { fieldId: "keywords_th", sectionId: "s1_general", question: "คำสำคัญ (ภาษาไทย) กำหนดไม่เกิน 5 คำ", type: "list" },
-  { fieldId: "keywords_en", sectionId: "s1_general", question: "คำสำคัญ (ภาษาอังกฤษ) กำหนดไม่เกิน 5 คำ", type: "list" },
+  { fieldId: "keywords_th", sectionId: "s1_general", question: "คำสำคัญ (ภาษาไทย) กำหนดไม่เกิน 5 คำ", type: "list", answerMarker: "(ภาษาไทย)" },
+  { fieldId: "keywords_en", sectionId: "s1_general", question: "คำสำคัญ (ภาษาอังกฤษ) กำหนดไม่เกิน 5 คำ", type: "list", answerMarker: "(ภาษาอังกฤษ)" },
   {
     fieldId: "oecd_field",
     sectionId: "s1_general",
@@ -191,7 +195,7 @@ const fields: TemplateField[] = [
   {
     fieldId: "framework_description",
     sectionId: "s2_project",
-    question: "คำอธิบายกรอบการวิจัย/พัฒนา (Input–Process–Output)",
+    question: "จากรูปข้างต้น คำอธิบายกรอบการวิจัย/พัฒนา (Input–Process–Output)",
     type: "long_text",
   },
   {
@@ -237,7 +241,7 @@ const fields: TemplateField[] = [
   {
     fieldId: "budget_summary",
     sectionId: "s3_plan",
-    question: "แผนการใช้จ่ายงบประมาณ — ประมาณการงบประมาณตลอดโครงการแบ่งเป็นหมวด",
+    question: "ประมาณการงบประมาณตลอดโครงการ (แบ่งเป็นหมวด)",
     type: "long_text",
   },
   {
@@ -246,13 +250,6 @@ const fields: TemplateField[] = [
     question: "รายละเอียดการจัดซื้อครุภัณฑ์",
     type: "table",
     tableColumns: ["ชื่อครุภัณฑ์", "รายละเอียดครุภัณฑ์", "ครุภัณฑ์ที่มีอยู่เดิม/สถานภาพการใช้งาน", "เหตุผลและความจำเป็นต่อโครงการ", "การใช้ประโยชน์เมื่อโครงการสิ้นสุด"],
-  },
-  {
-    fieldId: "collaborating_orgs",
-    sectionId: "s3_plan",
-    question: "หน่วยงานร่วมดำเนินการ/ภาคเอกชนหรือชุมชนที่ร่วมลงทุนหรือดำเนินการ",
-    type: "table",
-    tableColumns: ["ลำดับที่", "ปีงบประมาณ", "ชื่อหน่วยงานรัฐ/บริษัท/หน่วยงานต่างประเทศ", "แนวทางร่วมดำเนินการ", "การร่วมลงทุน in-cash (บาท)", "การร่วมลงทุน in-kind", "รวม"],
   },
   {
     fieldId: "research_standards",
@@ -265,6 +262,13 @@ const fields: TemplateField[] = [
       { value: "modern_biotech", labels: ["มีการวิจัยที่เกี่ยวข้องกับงานด้านเทคโนโลยีชีวภาพสมัยใหม่"] },
       { value: "chemical_lab", labels: ["มีการใช้ห้องปฏิบัติการที่เกี่ยวกับสารเคมี"] },
     ],
+  },
+  {
+    fieldId: "collaborating_orgs",
+    sectionId: "s3_plan",
+    question: "หน่วยงานร่วมดำเนินการ/ภาคเอกชนหรือชุมชนที่ร่วมลงทุนหรือดำเนินการ",
+    type: "table",
+    tableColumns: ["ลำดับที่", "ปีงบประมาณ", "ชื่อหน่วยงานรัฐ/บริษัท/หน่วยงานต่างประเทศ", "แนวทางร่วมดำเนินการ", "การร่วมลงทุน in-cash (บาท)", "การร่วมลงทุน in-kind", "รวม"],
   },
   {
     fieldId: "readiness_level",

@@ -23,11 +23,11 @@
 - [ ] Task 2: OOXML raw extractor `parseDocxForm` (jszip + block scanner)
 
 ### Checkpoint: Foundation
-- [ ] `pnpm test -- tests/unit/files` เขียว (template ครบ field, extractor นับ 11 ตาราง / 154 checkbox บน fixture)
-- [ ] `pnpm typecheck` เขียว
+- [x] `pnpm test -- tests/unit/files` เขียว (template ครบ field, extractor นับ 11 ตาราง / 77 checkbox control บน fixture)
+- [x] `pnpm typecheck` เขียว
 
 ### Phase 2: Core Extraction & Chunking
-- [ ] Task 3: `form-extract.ts` — fields extractor (tolerant matching, boilerplate แยก, enum mapping)
+- [x] Task 3: `form-extract.ts` — fields extractor (tolerant matching, boilerplate แยก, enum mapping)
 - [ ] Task 4: `fieldsToChunks` — field chunks + table row-chunks + meta/heading_path
 - [ ] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
 
