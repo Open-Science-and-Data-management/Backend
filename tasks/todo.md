@@ -32,10 +32,10 @@
   - Depends: Tasks 1-2
   - Scope: Medium
 
-- [ ] Task 4: `fieldsToChunks`
+- [x] Task 4: `fieldsToChunks`
   - Acceptance: fields → chunks — 1 chunk ต่อ field, คำถาม prefix ทุก chunk, คำตอบยาว > targetTokens แตก part i/n, ตาราง → row-chunks (header + ชื่อตารางติดทุกแถว, ทั้งตาราง = parent), `heading_path = "ส่วนที่ N > …"`, meta `{template_version, section_id, field_id, parent_chunk_index, enum fields}`, คำตอบว่าง → ไม่เกิด chunk
   - Verify: `pnpm test -- tests/unit/files` — ทุก field ID ปรากฏ, 0 boilerplate, empty/no-chunk, part i/n
-  - Files: `src/features/files/chunking.ts` (+type `ChunkWithMeta`), `tests/unit/files/chunking.test.ts` (เพิ่ม)
+  - Files: `src/features/files/chunking.ts` (+type `ChunkWithMeta`), `tests/unit/files/fields-to-chunks.test.ts` (ใหม่ แยกจาก chunking.test.ts — synthetic + checkpoint บน fixture)
   - Depends: Tasks 1, 3
   - Scope: Medium
 

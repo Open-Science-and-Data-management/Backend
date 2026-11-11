@@ -28,7 +28,7 @@
 
 ### Phase 2: Core Extraction & Chunking
 - [x] Task 3: `form-extract.ts` — fields extractor (tolerant matching, boilerplate แยก, enum mapping)
-- [ ] Task 4: `fieldsToChunks` — field chunks + table row-chunks + meta/heading_path
+- [x] Task 4: `fieldsToChunks` — field chunks + table row-chunks + meta/heading_path
 - [ ] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
 
 ### Checkpoint: Core
