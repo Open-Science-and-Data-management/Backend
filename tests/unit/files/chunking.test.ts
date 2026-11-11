@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { blocksToChunks, type DocxBlock } from "@/features/files/chunking.js";
 
-const CFG = { targetTokens: 450, overlapPercent: 10 };
+const CFG = { targetTokens: 450, overlapPercent: 10, tableMaxTokens: 4096 };
 
 const h = (level: 1 | 2 | 3, text: string): DocxBlock => ({ kind: "heading", level, text });
 const p = (text: string): DocxBlock => ({ kind: "paragraph", text });

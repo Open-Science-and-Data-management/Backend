@@ -176,7 +176,7 @@ describe.skipIf(!dbReady)("react loop + tools (integration)", () => {
     expect(TOOL_NAMES).toEqual(expect.arrayContaining((firstCall?.tools ?? []).map((t) => t.name)));
   });
 
-  it("read_proposal parent-expansion — row-chunk ตารางไม่ซ้ำกับ parent, pack ต่อ heading_path (SPEC ff2569 Task 8)", async () => {
+  it("read_proposal — pack ต่อ heading_path, meta เก่า (field_id เดี่ยว) ผ่านเป็น generic ไม่ตก (SPEC ff2569 Rev 2)", async () => {
     const H = "ส่วนที่ 3 แผนงาน: แผนการดำเนินงานโครงการ > แผนการดำเนินงาน (Gantt รายเดือน พร้อมร้อยละของกิจกรรม)";
     const [file] = await db
       .insert(fileRecords)
@@ -203,9 +203,9 @@ describe.skipIf(!dbReady)("react loop + tools (integration)", () => {
         { claims: { sub: userId, username: USERNAME, role: "researcher" }, projectId, dmpId },
         { id: "t1", name: "read_proposal", argumentsJson: "{}" },
       );
-      // parent ครอบตารางเต็มอยู่แล้ว → row-chunk ถูกตัด ไม่ซ้ำสองทาง; chunk heading null ผ่านตรง
+      // Rev 2: ไม่มี parent-expansion — ทุก chunk ถูก pack รวมต่อ heading_path; chunk heading null ผ่านตรง
       expect(out).toContain(`## ${H}\nแผนการดำเนินงาน\n| ปีที่ | กิจกรรม |`);
-      expect(out).not.toContain("ปีที่ 1: ศึกษาข้อมูล");
+      expect(out).toContain("ปีที่ 1: ศึกษาข้อมูล");
       expect(out).toContain("ท้ายเอกสาร");
     } finally {
       await db.delete(fileChunks).where(eq(fileChunks.fileId, file.fileId));

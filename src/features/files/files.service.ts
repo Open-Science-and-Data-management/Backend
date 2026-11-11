@@ -75,7 +75,11 @@ export class FilesService {
       try {
         extractedText = await parseDocx(file.buffer);
         const rag = config().files.rag;
-        const chunkConfig = { targetTokens: rag.chunkTargetTokens, overlapPercent: rag.chunkOverlapPercent };
+        const chunkConfig = {
+          targetTokens: rag.chunkTargetTokens,
+          overlapPercent: rag.chunkOverlapPercent,
+          tableMaxTokens: rag.chunkTableMaxTokens,
+        };
         // fast path FF2569 (SPEC ff2569) — parse OOXML ตรง + extract ต่อ template schema;
         // match ไม่ครบพอ (ไม่ใช่ฟอร์ม/โครงเพี้ยน) หรือ parse พัง → fallback generic เดิม (ไม่ error)
         if (rag.formFastPath) {

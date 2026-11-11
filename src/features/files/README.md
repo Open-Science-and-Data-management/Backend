@@ -33,7 +33,7 @@ files/
 ├── docx-form.ts          # parse OOXML ตรง (jszip) — paragraphs/tables/checkbox (w14:checked)/images + block ordinal
 ├── form-extract.ts       # pure functions — match เอกสารเข้า template schema ต่อ field (tolerant matching, sequential cursor, negation-aware enum)
 ├── chunking.ts           # pure functions — blocksToChunks (generic) + fieldsToChunks (fast path) ตาม target token + overlap จาก config.toml
-├── retrieval.ts          # pure helper — parent-expansion expandToSections (SPEC ff2569 Task 8): row-chunk → parent + pack ต่อ heading_path
+├── retrieval.ts          # pure helper — expandToSections: pack ต่อ heading_path เป็น section เต็ม (read_proposal)
 └── templates/
     └── ff2569.ts         # schema ฟอร์ม FF2569 (zod-validated) — fieldId/sectionId/enum labels — single source of truth ของการ map เอกสาร
 ```
@@ -90,7 +90,7 @@ const hits = await this.files.retrieve(
 ```
 
 - ต้องรัน `pnpm db:migrate` แล้ว (ตาราง `file_records`, `file_chunks`)
-- `file_chunks.meta` (jsonb, nullable) — chunk จาก fast path FF2569 เก็บ `{template_version, field_id, section_id, enum_value?, part/parts?, table_row?, parent_chunk_index?}`; generic path ไม่เก็บ (null) (SPEC ff2569, migration 0009)
+- `file_chunks.meta` (jsonb, nullable) — chunk จาก fast path FF2569 เก็บ `{template_version, field_ids: string[], section_id, enum_value?, part/parts?}` (field ใน chunkGroup → `field_ids` ครบทุก field ในกลุ่ม; ข้อมูลเก่าแบบ `field_id` เดี่ยวอ่านเป็น generic ได้); generic path ไม่เก็บ (null) (SPEC ff2569 Rev 2, migration 0009)
 - ต้องตั้งค่า `[files]` ใน config.toml — `storagePath` และ `[files.rag]` รวม knob `formFastPath` (ปิด/เปิด fast path) กับ `vlmModel` (ตั้งค่าว่างเพื่อปิด VLM caption) (loader zod-validate แล้ว fail-fast)
 
 ## Dependencies
