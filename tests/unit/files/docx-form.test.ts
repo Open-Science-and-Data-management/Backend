@@ -1,6 +1,6 @@
 // unit — parseDocxForm: อ่าน OOXML ตรงบน fixture FF2569 จริง — ตาราง/checkbox state/รูป ครบตามที่วิเคราะห์ไว้
 // (11 ตาราง, 154 checkbox content control, 2 drawing — docs/research/ff2569-form-rag-structure.md §1)
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseDocxForm } from "@/features/files/docx-form.js";
@@ -13,7 +13,8 @@ describe("parseDocxForm (fixture FF2569)", () => {
     expect(doc.tables).toHaveLength(11);
     const teamRow = doc.tables.flatMap((t) => t.rows).find((r) => r.some((c) => c.includes("รวิภัทร")));
     expect(teamRow).toBeDefined();
-    expect(teamRow!.some((c) => c.includes("วิศวกรรมเกษตร"))).toBe(true);
+    assert(teamRow);
+    expect(teamRow.some((c) => c.includes("วิศวกรรมเกษตร"))).toBe(true);
     const ganttTable = doc.tables.find((t) => t.rows.some((r) => r.some((c) => c.includes("กิจกรรมย่อยที่ 1"))));
     expect(ganttTable).toBeDefined();
   });

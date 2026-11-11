@@ -1,5 +1,5 @@
 // unit — ff2569 template: โครง schema ครบ สม่ำเสมอ และผ่าน Zod validation ของตัวเอง
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { FF2569_TEMPLATE_VERSION, ff2569Template, ff2569TemplateSchema } from "@/features/files/templates/ff2569.js";
 
 describe("ff2569Template", () => {
@@ -30,7 +30,8 @@ describe("ff2569Template", () => {
   it("enum field ต้องมี options ≥ 2 พร้อม canonical value + labels สำหรับ match", () => {
     for (const f of fields.filter((f) => f.type === "enum")) {
       expect(f.options?.length ?? 0, `enum ${f.fieldId} missing options`).toBeGreaterThanOrEqual(2);
-      for (const o of f.options!) {
+      assert(f.options);
+      for (const o of f.options) {
         expect(o.value).toMatch(/^[a-z][a-z0-9_]*$/);
         expect(o.labels.length, `enum ${f.fieldId}/${o.value} missing labels`).toBeGreaterThan(0);
       }

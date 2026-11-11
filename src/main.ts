@@ -38,8 +38,8 @@ document.components = { ...document.components, ...registryDoc.components };
 // op ไหนไม่ได้ระบุ security เอง = ต้อง sign-in (Bearer JWT จาก /auth/sessions)
 for (const item of Object.values(document.paths)) {
   for (const op of Object.values(item)) {
-    if (typeof op === "object" && op !== null && !Array.isArray(op) && op.security === undefined) {
-      op.security = [{ bearer: [] }];
+    if (typeof op === "object" && op !== null && !Array.isArray(op) && !("security" in op)) {
+      Object.assign(op, { security: [{ bearer: [] }] }); // default: ต้อง sign-in
     }
   }
 }
