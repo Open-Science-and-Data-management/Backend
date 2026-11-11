@@ -5,6 +5,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { AiToolCall, AiToolDef } from "@/shared/ports/ai-client.js";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { FilesService } from "@/features/files/files.service.js";
+import { expandToSections } from "@/features/files/retrieval.js";
 import { ApiError } from "@/shared/http/error-envelope.js";
 import { domainProfiles } from "@/shared/domain-profiles/domain-profiles.js";
 import * as filesRepo from "@/features/files/files.repository.js";
@@ -48,8 +49,12 @@ export class AiTools {
         if (proposalFileId === undefined || proposalFileId === null || proposalFileId === "") return NO_PROPOSAL;
         const chunks = await filesRepo.chunksOfFile(this.db, proposalFileId);
         if (chunks.length === 0) return NO_PROPOSAL;
-        return chunks
-          .map((c) => (c.headingPath !== null ? `## ${c.headingPath}\n${c.content}` : c.content))
+        // parent-expansion (SPEC ff2569 Task 8, research §Q14) — row-chunk ตารางไม่ซ้ำกับ parent,
+        // pack ต่อ heading_path ให้โมเดลเห็น section เต็ม; generic path ก็ได้ section เดียวต่อหัวข้อ
+        return expandToSections(
+          chunks.map((c) => ({ chunk_index: c.chunkIndex, content: c.content, heading_path: c.headingPath, meta: c.meta })),
+        )
+          .map((s) => (s.heading !== null ? `## ${s.heading}\n${s.content}` : s.content))
           .join("\n\n");
       },
     },

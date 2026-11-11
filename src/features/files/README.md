@@ -18,7 +18,7 @@
 
 **Out of scope:**
 
-- การใช้ไฟล์กับ AI (chat/analyze) — อยู่ที่ `features/ai` ซึ่งเรียก `FilesService.retrieve()` เท่านั้น
+- การใช้ไฟล์กับ AI (chat/analyze) — อยู่ที่ `features/ai` เรียก `FilesService.retrieve()` (search_proposal) และ `chunksOfFile` + `expandToSections` (read_proposal — section เต็ม, SPEC ff2569 Task 8)
 - การตรวจสิทธิ์ผู้ใช้ — ทำโดย global AuthGuard (`features/auth`) และสิทธิ์ระดับโปรเจกต์ (`features/projects`)
 
 ## Folder Structure
@@ -30,7 +30,8 @@ files/
 ├── files.repository.ts   # Drizzle query — file_records/file_chunks, insertWithChunks (transaction เดียว)
 ├── files.module.ts       # ผูก provider — DiskStorage + TransformersEmbedding, export FilesService
 ├── docx.ts               # แตก .docx เป็น plain text + blocks (heading 1–3 / paragraph) ด้วย mammoth
-└── chunking.ts           # pure functions — ตัด blocks เป็น chunks ตาม target token + overlap จาก config.toml
+├── chunking.ts           # pure functions — ตัด blocks เป็น chunks ตาม target token + overlap จาก config.toml
+└── retrieval.ts          # pure helper — parent-expansion expandToSections (SPEC ff2569 Task 8): row-chunk → parent + pack ต่อ heading_path
 ```
 
 ## Business Rules

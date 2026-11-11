@@ -1,15 +1,16 @@
 // integration — SPEC-ai S4.2: ReAct loop ต่อ mock OpenRouter client (scripted)
 // ตรวจ: เรียก tools ถูกลำดับจนได้คำตอบ, terminal event เสมอ, tools ทั้งสี่ read-only (ไม่มี write path, ข้อมูลไม่เปลี่ยน)
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import { loadConfig } from "@/shared/config/index.js";
 import { createDb } from "@/database/client.js";
-import { dmps, projects } from "@/database/schema/index.js";
+import { dmps, fileChunks, fileRecords, projects } from "@/database/schema/index.js";
 import { AppModule } from "@/app.module.js";
 import { AI_CLIENT, type AiClient, type AiCompleteParams, type AiMessage, type AiStreamChunk } from "@/shared/ports/ai-client.js";
 import { ReactLoop } from "@/features/ai/react-loop.js";
+import { AiTools } from "@/features/ai/ai.tools.js";
 import { registrationSchema } from "@/shared/contracts/registration.js";
 import * as usersRepo from "@/features/users/users.repository.js";
 import * as dmpsRepo from "@/features/dmps/dmps.repository.js";
@@ -173,6 +174,44 @@ describe.skipIf(!dbReady)("react loop + tools (integration)", () => {
     const firstCall = client.calls.at(0);
     expect(firstCall).toBeDefined();
     expect(TOOL_NAMES).toEqual(expect.arrayContaining((firstCall?.tools ?? []).map((t) => t.name)));
+  });
+
+  it("read_proposal parent-expansion — row-chunk ตารางไม่ซ้ำกับ parent, pack ต่อ heading_path (SPEC ff2569 Task 8)", async () => {
+    const H = "ส่วนที่ 3 แผนงาน: แผนการดำเนินงานโครงการ > แผนการดำเนินงาน (Gantt รายเดือน พร้อมร้อยละของกิจกรรม)";
+    const [file] = await db
+      .insert(fileRecords)
+      .values({
+        projectId,
+        uploadedBy: userId,
+        filename: "ff-loop.docx",
+        fileType: "docx",
+        purpose: "proposal",
+        storagePath: "unused",
+      })
+      .returning();
+    const baseMeta = { template_version: "FF2569", field_id: "work_plan", section_id: "s3_plan" };
+    await db.insert(fileChunks).values([
+      { fileId: file.fileId, chunkIndex: 0, content: "แผนการดำเนินงาน\n| ปีที่ | กิจกรรม |", headingPath: H, meta: baseMeta },
+      { fileId: file.fileId, chunkIndex: 1, content: "แผนการดำเนินงาน\nปีที่ 1: ศึกษาข้อมูล", headingPath: H, meta: { ...baseMeta, table_row: 0, parent_chunk_index: 0 } },
+      { fileId: file.fileId, chunkIndex: 2, content: "ท้ายเอกสาร", headingPath: null, meta: null },
+    ]);
+    await db.update(projects).set({ proposalFileId: file.fileId }).where(eq(projects.projectId, projectId));
+
+    try {
+      const tools = app.get(AiTools);
+      const out = await tools.dispatch(
+        { claims: { sub: userId, username: USERNAME, role: "researcher" }, projectId, dmpId },
+        { id: "t1", name: "read_proposal", argumentsJson: "{}" },
+      );
+      // parent ครอบตารางเต็มอยู่แล้ว → row-chunk ถูกตัด ไม่ซ้ำสองทาง; chunk heading null ผ่านตรง
+      expect(out).toContain(`## ${H}\nแผนการดำเนินงาน\n| ปีที่ | กิจกรรม |`);
+      expect(out).not.toContain("ปีที่ 1: ศึกษาข้อมูล");
+      expect(out).toContain("ท้ายเอกสาร");
+    } finally {
+      await db.delete(fileChunks).where(eq(fileChunks.fileId, file.fileId));
+      await db.delete(fileRecords).where(eq(fileRecords.fileId, file.fileId));
+      await db.update(projects).set({ proposalFileId: null }).where(eq(projects.projectId, projectId));
+    }
   });
 
   it("tools ทั้งสี่ read-only — ข้อมูลใน DB ไม่เปลี่ยนหลัง run", async () => {
