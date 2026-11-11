@@ -39,7 +39,7 @@
   - Depends: Tasks 1, 3
   - Scope: Medium
 
-- [ ] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
+- [x] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
   - Acceptance: คอลัมน์ `meta jsonb` nullable ที่ `file_chunks`; `ChunkInsert.meta`, `chunksOfFile` คืน meta; `FileResponse` contract ไม่เปลี่ยนในข้อนี้
   - Verify: `pnpm db:generate && pnpm db:migrate` + `pnpm test -- tests/integration/schema.test.ts` + `pnpm test -- tests/unit/contracts`
   - Files: `src/database/schema/index.ts`, `src/database/migrations/*` (drizzle-kit), `src/features/files/files.repository.ts`, `docs/api/files.md` (หมายเหตุ meta)
@@ -47,8 +47,8 @@
   - Scope: Medium
 
 ### Checkpoint: Core
-- [ ] unit ครบตาม Task 3-4 acceptance
-- [ ] migration สำเร็จ + schema/contracts เขียว
+- [x] unit ครบตาม Task 3-4 acceptance
+- [x] migration สำเร็จ + schema/contracts เขียว
 
 ## Phase 3: Wiring & Retrieval
 

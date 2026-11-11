@@ -29,11 +29,11 @@
 ### Phase 2: Core Extraction & Chunking
 - [x] Task 3: `form-extract.ts` — fields extractor (tolerant matching, boilerplate แยก, enum mapping)
 - [x] Task 4: `fieldsToChunks` — field chunks + table row-chunks + meta/heading_path
-- [ ] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
+- [x] Task 5: migration `file_chunks.meta jsonb` + repo/contract/docs
 
 ### Checkpoint: Core
-- [ ] unit ครบ: ทุก field ID มี chunk, 0 boilerplate ใน index, คำตอบว่างไม่เกิด chunk, คำตอบยาวแตก part i/n
-- [ ] `pnpm db:migrate` สำเร็จ + `tests/integration/schema.test.ts` เขียว + `tests/unit/contracts/contracts.test.ts` เขียว
+- [x] unit ครบ: ทุก field ID มี chunk, 0 boilerplate ใน index, คำตอบว่างไม่เกิด chunk, คำตอบยาวแตก part i/n
+- [x] `pnpm db:migrate` สำเร็จ + `tests/integration/schema.test.ts` เขียว + `tests/unit/contracts/contracts.test.ts` เขียว
 
 ### Phase 3: Wiring & Retrieval
 - [ ] Task 6: upload fast path + fallback flag (`files.service.ts`, config knob, `docs/api/files.md`, e2e)

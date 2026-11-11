@@ -109,7 +109,7 @@ curl http://localhost:3000/projects/01948f2a-1c3b-7e5a-9f2c-8b4d1e2f3a4b/files \
 
 - ถอดข้อความล้วนด้วย mammoth เก็บไว้กับไฟล์ (`docx_extracted_text`) เพื่อให้ agent อ่านสำเร็จรูปได้
 - แยกเนื้อหาเป็น blocks (heading ระดับ 1–3 และย่อหน้า) แล้วแบ่งเป็น chunks โดย pack ย่อหน้าจนถึงประมาณ 450 tokens ต่อ chunk ทับซ้อนท้ายก้อน 10% ตาม config (`files.rag`) แต่ละ chunk ผูกกับ `heading_path` ล่าสุดในรูป `"H1 > H2"` เพื่อใช้อ้างบริบทตอนค้น
-- ฝัง embedding ของทุก chunk ด้วยโมเดล `Xenova/multilingual-e5-large` (1024 มิติ) แล้วบันทึกไฟล์ chunks และการ supersede ทั้งหมดใน transaction เดียว — พังตรงจุดใดจุดหนึ่งจะคืน 422 โดยไม่ทิ้งข้อมูลครึ่ง ๆ กลาง ๆ
+- ฝัง embedding ของทุก chunk ด้วยโมเดล `Xenova/multilingual-e5-large` (1024 มิติ) แล้วบันทึกไฟล์ chunks และการ supersede ทั้งหมดใน transaction เดียว — พังตรงจุดใดจุดหนึ่งจะคืน 422 โดยไม่ทิ้งข้อมูลครึ่ง ๆ กลาง ๆ แต่ละ chunk อาจเก็บ `meta` (jsonb) เพิ่ม — ขณะนี้สำหรับ chunk จาก fast path FF2569 (`{template_version, field_id, section_id, ...}`), generic path ไม่เก็บ
 
 ไฟล์ `pdf` และ `other` เก็บเฉพาะ bytes และ metadata ไม่ถอดข้อความและไม่แบ่ง chunks
 
