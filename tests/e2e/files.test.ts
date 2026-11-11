@@ -236,14 +236,21 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
 
     const ffChunks = await db.select().from(fileChunks).where(eq(fileChunks.fileId, ff.body.file_id)).orderBy(fileChunks.chunkIndex);
     expect(ffChunks.length).toBeGreaterThan(0);
+    // meta jsonb มาจาก DB เป็น unknown — กรองด้วย runtime narrowing ก่อนอ่าน field_ids
+    const fieldIdsOf = (meta: unknown): string[] => {
+      if (meta !== null && typeof meta === "object" && "field_ids" in meta && Array.isArray(meta.field_ids)) {
+        return meta.field_ids.filter((id): id is string => typeof id === "string");
+      }
+      return [];
+    };
     for (const c of ffChunks) {
       expect(c.meta).not.toBeNull();
-      expect(c.meta).toHaveProperty("field_id");
+      expect(fieldIdsOf(c.meta).length).toBeGreaterThan(0);
       expect(c.headingPath).not.toBeNull();
     }
 
-    // VLM caption (Task 7): ฟิลด์ research_framework ได้ chunk จาก caption — คำถาม prefix + คำตอบ mock
-    const imgChunk = ffChunks.find((c) => (c.meta as { field_id?: string } | null)?.field_id === "research_framework");
+    // VLM caption (Task 7): ฟิลด์ research_framework ได้ chunk จาก caption — mock caption ไหลผ่าน flow
+    const imgChunk = ffChunks.find((c) => fieldIdsOf(c.meta).includes("research_framework"));
     expect(imgChunk).toBeDefined();
     expect(imgChunk?.content.startsWith("กรอบการวิจัย/พัฒนา (แผนภาพ)")).toBe(true);
     expect(imgChunk?.content).toContain("vlm_caption"); // marker ของ MockAiClient — caption ไหลผ่าน flow จริง
