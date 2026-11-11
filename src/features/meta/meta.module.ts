@@ -3,8 +3,11 @@ import { Module } from "@nestjs/common";
 import { MetaController } from "./meta.controller.js";
 import { MetaService } from "./meta.service.js";
 
+import { OpenApiController } from "./openapi.controller.js";
+import { OpenApiService } from "./openapi.service.js";
+
 @Module({
-  controllers: [MetaController],
-  providers: [MetaService],
+  controllers: [MetaController, OpenApiController],
+  providers: [MetaService, OpenApiService],
 })
 export class MetaModule {}
