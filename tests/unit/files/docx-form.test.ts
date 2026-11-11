@@ -3,7 +3,7 @@
 import { assert, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { parseDocxForm } from "@/features/files/docx-form.js";
+import { parseDocxForm, readDocxImage } from "@/features/files/docx-form.js";
 
 const fixture = readFile(fileURLToPath(new URL("../../fixtures/ff2569-proposal.docx", import.meta.url)));
 
@@ -56,5 +56,24 @@ describe("parseDocxForm (fixture FF2569)", () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     const all = [...a.paragraphs, ...a.tables.flatMap((t) => t.rows.flat())].join(" ");
     expect(all).not.toMatch(/&amp;|&lt;|&gt;/);
+  });
+});
+
+describe("readDocxImage (SPEC ff2569 Task 7)", () => {
+  it("รูป png ใน fixture → data URI base64 ถอดได้", async () => {
+    const buf = await fixture;
+    const doc = await parseDocxForm(buf);
+    const target = Object.values(doc.rels).find((t) => t.endsWith(".png"));
+    assert(target);
+    const uri = await readDocxImage(buf, target);
+    assert(uri !== null);
+    expect(uri).toMatch(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/);
+    expect(Buffer.from(uri.slice(uri.indexOf(",") + 1), "base64").byteLength).toBeGreaterThan(0);
+  });
+
+  it("ฟอร์แมตที่ VLM ไม่รองรับ (emf) และ entry หาย → null — caller ข้าม caption", async () => {
+    const buf = await fixture;
+    expect(await readDocxImage(buf, "media/diagram.emf")).toBeNull();
+    expect(await readDocxImage(buf, "media/missing.png")).toBeNull();
   });
 });

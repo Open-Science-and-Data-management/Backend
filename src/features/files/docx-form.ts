@@ -97,6 +97,36 @@ function parseTable(tblXml: string, checkboxes: FormCheckbox[], block: number, t
   return { rows };
 }
 
+// ── images ───────────────────────────────────────────────────────────────────
+/** mime ที่ VLM บน OpenRouter รับจริง — emf/wmf (vector metafile ของ Word) ไม่รองรับ → null (ข้าม caption) */
+function imageMime(ext: string): string | null {
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    default:
+      return null;
+  }
+}
+
+/** อ่านรูปจาก docx (target จาก rels เช่น "media/image1.png" เทียบ word/) → data URI สำหรับ image_url;
+ *  ฟอร์แมตที่ VLM ไม่รองรับ หรือ entry หาย → null (caller ข้าม caption ตาม SPEC §Edge) */
+export async function readDocxImage(data: Buffer, target: string): Promise<string | null> {
+  const mime = imageMime(target.split(".").pop()?.toLowerCase() ?? "");
+  if (mime === null) return null;
+  const path = target.startsWith("/") ? target.slice(1) : `word/${target}`;
+  const zip = await JSZip.loadAsync(data);
+  const entry = zip.file(path);
+  if (entry === null) return null;
+  return `data:${mime};base64,${await entry.async("base64")}`;
+}
+
 /** parse .docx → RawFormDocument — throw เมื่อไฟล์ไม่ใช่ docx/ไม่มี document.xml (caller จัด 422 เอง) */
 export async function parseDocxForm(data: Buffer): Promise<RawFormDocument> {
   const zip = await JSZip.loadAsync(data);

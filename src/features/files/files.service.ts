@@ -5,13 +5,15 @@ import { listOf, type ListEnvelope } from "@/shared/contracts/envelope.js";
 import { config } from "@/shared/config/index.js";
 import { FILE_STORAGE, type FileStorage } from "@/shared/ports/file-storage.js";
 import { EMBEDDING, type Embedding } from "@/shared/ports/embedding.js";
+import { AI_CLIENT, type AiClient, type AiMessage } from "@/shared/ports/ai-client.js";
+import { chargeQuota } from "@/features/ai/ai.repository.js";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { ProjectsService } from "@/features/projects/projects.service.js";
 import { DB } from "@/database/database.module.js";
 import { blocksToChunks, fieldsToChunks } from "./chunking.js";
 import { parseDocx, parseDocxBlocks } from "./docx.js";
-import { parseDocxForm } from "./docx-form.js";
-import { extractFields } from "./form-extract.js";
+import { parseDocxForm, readDocxImage, type RawFormDocument } from "./docx-form.js";
+import { extractFields, type ExtractedField } from "./form-extract.js";
 import type { Db, FileRow } from "./files.repository.js";
 import * as repo from "./files.repository.js";
 
@@ -39,6 +41,7 @@ export class FilesService {
     @Inject(DB) private readonly db: Db,
     @Inject(FILE_STORAGE) private readonly storage: FileStorage,
     @Inject(EMBEDDING) private readonly embedding: Embedding,
+    @Inject(AI_CLIENT) private readonly ai: AiClient,
     @Inject(ProjectsService) private readonly projectsService: ProjectsService,
   ) {}
 
@@ -80,6 +83,7 @@ export class FilesService {
             const raw = await parseDocxForm(file.buffer);
             const result = extractFields(raw);
             if (result.fields.length > 0 && result.misses.length <= result.fields.length) {
+              await this.captionImages(claims, file.buffer, raw, result.fields);
               const chunks = fieldsToChunks(result.fields, chunkConfig);
               const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
               buildChunks = (fileId) =>
@@ -135,6 +139,59 @@ export class FilesService {
       buildChunks,
     );
     return { ...repo.toFileResponse(row), form_parsed: formParsed };
+  }
+
+  /**
+   * VLM caption best-effort (SPEC ff2569 Task 7, Q10): รูปของ field แบบ image → caption เติมลง field
+   * แล้ว fieldsToChunks ใช้ทำ chunk — ปิดด้วย `vlmModel` ว่าง; quota หมด/ยิงพลาด → ข้าม + warn, upload ไม่ fail;
+   * usage ทุก call นับโควตาผู้อัปโหลดผ่าน reconcile เดิม (ADR-0023)
+   */
+  private async captionImages(
+    claims: AccessClaims,
+    buffer: Buffer,
+    doc: RawFormDocument,
+    fields: ExtractedField[],
+  ): Promise<void> {
+    const model = config().files.rag.vlmModel;
+    if (model === "") return;
+    for (const f of fields) {
+      if (f.type !== "image" || f.imageRid === null || !(f.imageRid in doc.rels)) continue;
+      try {
+        const dataUri = await readDocxImage(buffer, doc.rels[f.imageRid]);
+        if (dataUri === null) {
+          console.warn(`files: skip caption — image ${f.imageRid} not a VLM-supported format`);
+          continue;
+        }
+        const messages: AiMessage[] = [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `ภาพนี้เป็นคำตอบของหัวข้อ "${f.question}" ในเอกสารข้อเสนอโครงการวิจัย — อธิบายเนื้อหาในภาพอย่างละเอียดเป็นภาษาไทยเพียงย่อหน้าเดียว เพื่อใช้ค้นคืนในระบบค้นหา`,
+              },
+              { type: "image_url", image_url: { url: dataUri } },
+            ],
+          },
+        ];
+        let caption = "";
+        let report: { input_tokens: number; output_tokens: number; cached_input_tokens: number } | null = null;
+        for await (const chunk of this.ai.complete({ action: "vlm_caption", model, messages })) {
+          if (chunk.type === "delta") caption += chunk.text;
+          else if (chunk.type === "finish" && chunk.usage !== null) {
+            report = {
+              input_tokens: chunk.usage.promptTokens,
+              output_tokens: chunk.usage.completionTokens,
+              cached_input_tokens: chunk.usage.cachedTokens,
+            };
+          }
+        }
+        await chargeQuota(this.db, claims.sub, report);
+        if (caption.trim() !== "") f.caption = caption.trim();
+      } catch (error) {
+        console.warn(`files: VLM caption failed (${f.fieldId}) — skip: ${String(error)}`);
+      }
+    }
   }
 
   async list(

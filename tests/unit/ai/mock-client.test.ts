@@ -37,6 +37,26 @@ describe("MockAiClient", () => {
     expect(chunks.some((c) => c.type === "assistant_message" && c.toolCalls.length > 0)).toBe(false);
     expect(chunks.at(-1)).toMatchObject({ type: "finish", finishReason: "stop" });
   });
+
+  it("user content เป็น multipart (VLM caption) — canned ตัดเอา text part", async () => {
+    const chunks = await collect(
+      new MockAiClient().complete({
+        action: "vlm_caption",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "อธิบายภาพกรอบการวิจัย" },
+              { type: "image_url", image_url: { url: "data:image/png;base64,iVBOR" } },
+            ],
+          },
+        ],
+      }),
+    );
+    const final = chunks.find((c): c is Extract<AiStreamChunk, { type: "assistant_message" }> => c.type === "assistant_message");
+    expect(final?.content).toContain("อธิบายภาพกรอบการวิจัย");
+    expect(chunks.at(-1)).toMatchObject({ type: "finish", finishReason: "stop", usage: { promptTokens: 100 } });
+  });
 });
 
 async function collect(iterable: AsyncIterable<AiStreamChunk>): Promise<AiStreamChunk[]> {

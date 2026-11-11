@@ -142,6 +142,21 @@ describe("fieldsToChunks — กฎพื้นฐาน", () => {
     expect(chunks[0].meta.field_id).toBe("subactivity[2].concept");
   });
 
+  it("image มี caption จาก VLM — 1 chunk คำถาม prefix, caption trim; ไม่มี/ว่าง → ไม่เกิด chunk (Task 7)", () => {
+    const withCaption = fieldsToChunks(
+      [f({ fieldId: "research_framework", sectionId: "s2_project", type: "image", imageRid: "rId15", caption: "  แผนภาพกรอบการวิจัย 3 ชั้น  " })],
+      CFG,
+      TPL,
+    );
+    expect(withCaption).toHaveLength(1);
+    expect(withCaption[0].content).toBe("คำถามของ research_framework\nแผนภาพกรอบการวิจัย 3 ชั้น");
+    expect(withCaption[0].meta.field_id).toBe("research_framework");
+    expect(withCaption[0].heading_path).toBe("ส่วนที่ 2 ข้อมูลโครงการ > คำถามของ research_framework");
+
+    expect(fieldsToChunks([f({ fieldId: "a", type: "image", imageRid: "r1" })], CFG, TPL)).toHaveLength(0);
+    expect(fieldsToChunks([f({ fieldId: "b", type: "image", imageRid: "r1", caption: "   " })], CFG, TPL)).toHaveLength(0);
+  });
+
   it("chunk_index ต่อเนื่องตามลำดับ field ในเอกสาร", () => {
     const chunks = fieldsToChunks([f({ fieldId: "a", value: "x" }), f({ fieldId: "b", value: "y" })], CFG, TPL);
     expect(chunks.map((c) => c.chunk_index)).toEqual([0, 1]);

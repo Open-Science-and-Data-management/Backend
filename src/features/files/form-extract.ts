@@ -15,6 +15,8 @@ export interface ExtractedField {
   enumValue: string | null; // canonical value ของ enum จาก w14:checked (negation-aware)
   table: string[][] | null; // แถวข้อมูล (ไม่รวม header)
   imageRid: string | null; // r:embed ของรูปใน field แบบ image
+  /** caption จาก VLM — service เติมหลัง extract (SPEC ff2569 Task 7); extractor เป็น pure function ไม่ตั้งค่านี้ */
+  caption?: string;
   matched: boolean; // false = หาคำถามในเอกสารไม่เจอ (miss)
 }
 

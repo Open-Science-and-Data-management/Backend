@@ -169,7 +169,7 @@ function rowContent(question: string, headers: string[], row: string[]): string 
  * - ตาราง → parent chunk (ตารางเต็ม markdown) + row-chunks แนบ header ทุกแถว (research §Q5)
  * - enum/bool → label ที่ติ๊กเท่านั้นเข้าเนื้อหา + meta.enum_value canonical; ตัวเลือกที่ไม่ติ๊ก = boilerplate ไม่เข้า index
  * - คำตอบว่าง / anchor จัดลำดับ (repeat-heading) → ไม่เกิด chunk เปล่า (SPEC §Edge)
- * - image → ยังไม่ chunk — รอ VLM caption (Task 7)
+ * - image → chunk จาก VLM caption ที่ service เติม (Task 7); ไม่มี caption → ไม่เกิด chunk
  * `overlapPercent` ไม่ใช้: คำถาม prefix ทำหน้าที่บริบทร่วมแทน overlap ของ generic path
  */
 export function fieldsToChunks(
@@ -198,7 +198,12 @@ export function fieldsToChunks(
       push(`${question}: ${enumLabel(f.enumValue, fi?.options)}`, { ...base, enum_value: f.enumValue });
       continue;
     }
-    if (f.type === "image") continue;
+    if (f.type === "image") {
+      // caption จาก VLM (service เติม — SPEC ff2569 Task 7) ติด chunk แทนพิกเซล; ไม่มี caption → ไม่เกิด chunk
+      if (f.caption === undefined || f.caption.trim() === "") continue;
+      push(`${question}\n${f.caption.trim()}`, base);
+      continue;
+    }
 
     if (f.table !== null && f.table.length > 0) {
       const headers = fi?.tableColumns ?? [];
