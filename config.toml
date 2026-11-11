@@ -48,6 +48,11 @@ embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large
 #     chunk ระดับ field, คำถามติดทุก chunk, meta jsonb — match ไม่ครบพอ → fallback generic เดิม + form_parsed: false
 #     false = ปิด fast path ทั้งหมด อัปโหลดผ่าน generic path เสมอ
 formFastPath = true
+#   vlmModel — slug โมเดล vision บน OpenRouter (image_url message) ใช้ caption รูปในฟิลด์แบบ image
+#     ระหว่าง ingest แบบ fast path — caption ติด chunk แทนพิกเซล (SPEC ff2569 Task 7, Q10):
+#     quota หมด/ยิงพลาด → ข้าม caption + warn, upload ไม่ fail; usage นับโควตาผู้อัปโหลดผ่าน reconcile เดิม (ADR-0023)
+#     ว่าง ("") = ปิด caption — fast path ยังทำงานแต่ฟิลด์รูปไม่เกิด chunk
+vlmModel = "qwen/qwen3-vl-30b-a3b-instruct"
 
 [ai]                           # src/features/ai/
 _appliesTo = ["src/features/ai/"]

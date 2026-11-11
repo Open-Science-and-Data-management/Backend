@@ -39,7 +39,7 @@ export class OpenRouterClient implements AiClient {
       throw new AiError({ code: "ai_auth_failed", message: "OPENROUTER_KEY is not set", retryable: false });
     }
     const models = config().ai.models;
-    const model = models[params.action] ?? models.default;
+    const model = params.model !== undefined ? params.model : (models[params.action] ?? models.default);
     const body = {
       model,
       stream: true,
@@ -150,16 +150,27 @@ export class OpenRouterClient implements AiClient {
 
 type WireToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 
+type WireContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 type WireMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | WireContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: WireToolCall[] }
   | { role: "tool"; content: string; tool_call_id: string };
 
 function toWireMessage(m: AiMessage): WireMessage {
   switch (m.role) {
     case "system":
-    case "user":
       return { role: m.role, content: m.content };
+    case "user":
+      // multipart (VLM) — โครงสร้าง OpenAI-compatible ตรงตัว (https://openrouter.ai/docs/features/multimodal/image-inputs)
+      return {
+        role: m.role,
+        content:
+          typeof m.content === "string"
+            ? m.content
+            : m.content.map((p) => (p.type === "text" ? { type: p.type, text: p.text } : { type: p.type, image_url: p.image_url })),
+      };
     case "assistant":
       return {
         role: "assistant",

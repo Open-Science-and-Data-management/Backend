@@ -23,6 +23,8 @@ const configSchema = z.object({
       topK: z.number().int().positive(),
       embeddingModel: z.string(),
       formFastPath: z.boolean().default(true),
+      // slug ของ VLM บน OpenRouter สำหรับ caption รูป (SPEC ff2569 Task 7) — ว่าง = ปิด caption
+      vlmModel: z.string().default(""),
     }),
   }),
   ai: z.object({ mock: z.boolean().default(false), models: z.record(z.string()) }),

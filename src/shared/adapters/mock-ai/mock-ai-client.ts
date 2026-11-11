@@ -19,10 +19,15 @@ export class MockAiClient implements AiClient {
       return;
     }
     const lastUser = [...params.messages].reverse().find((m) => m.role === "user");
+    // content เป็น multipart (VLM) ได้ — ตัดเอาเฉพาะ text part มาโชว์ใน canned answer
+    const lastUserText =
+      typeof lastUser?.content === "string"
+        ? lastUser.content
+        : (lastUser?.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join(" ");
     const text = JSON.stringify({
       note: "คำตอบจาก mock — ตั้ง ai.mock = false เพื่อใช้ OpenRouter จริง",
       action: params.action,
-      question: typeof lastUser?.content === "string" ? lastUser.content.slice(0, 120) : "",
+      question: lastUserText.slice(0, 120),
     });
     yield { type: "delta", text: text.slice(0, 40) };
     yield { type: "delta", text: text.slice(40) };
