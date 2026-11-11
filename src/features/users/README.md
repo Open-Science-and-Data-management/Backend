@@ -1,6 +1,6 @@
 # users
 
-> โมดูลบัญชีผู้ใช้: รับสมัครสมาชิก researcher แล้ว sign-in ทันที ตรวจ username ว่าง อ่าน/แก้โปรไฟล์ตนเอง และเป็นเจ้าของการ hash/verify รหัสผ่านด้วย Argon2id
+> โมดูลบัญชีผู้ใช้: สมัครสมาชิก เช็ค username ว่าง และดู/แก้โปรไฟล์ของตัวเอง — พร้อมเป็นแหล่งเดียวของการ hash และตรวจรหัสผ่านของทั้งระบบ
 
 ## Table of Contents
 
@@ -13,198 +13,128 @@
 
 ## Overview
 
-- รับสมัครสมาชิกด้วย `POST /users` — สมัครเสร็จคือ sign-in ทันที ได้ session พร้อม refresh cookie
-- เก็บรหัสผ่านเป็น hash Argon2id — ห้ามเก็บ plaintext โดยตั้งค่าตามค่า OWASP minimum ใน `config.toml` (ADR-0029)
-- ให้ endpoint โปรไฟล์ตนเอง: `GET /users/me` และ `PATCH /users/me`
-- ตรวจ username ว่างที่ `GET /users/username-available`
-- เป็น owner ตาราง `users` + `credentials`
+- จัดการบัญชีผู้ใช้ตอนเริ่มต้น: สมัครสมาชิก (สมัครแล้วได้ session ใช้งานได้ทันที) เช็คว่า username ว่างหรือไม่ และดู/แก้โปรไฟล์ของตัวเอง
+- เป็นแหล่งเดียวที่ hash และตรวจรหัสผ่าน — โมดูลอื่น (เช่น `auth`) ต้องเรียกใช้ function จากโฟลเดอร์นี้
 
 **Out of scope:**
 
-- การออก access/refresh token — โมดูลนี้ยืม `AuthService.issueSessionFor()` จาก `features/auth` เท่านั้น
-- การแก้ role หรือโควตา AI — role ผูกกับสถาบัน (OC-1) และไม่มี endpoint ในโมดูลนี้เขียนทับ
+- การ sign-in/ออกจากระบบ และการออก/ต่ออายุ token — อยู่ที่ `features/auth`
+- การสร้างบัญชี role อื่นนอกจาก researcher — สถาบันเป็นผู้สร้างให้ ไม่ได้สมัครเอง
 
 ## Folder Structure
 
 ```text
 users/
-├── users.module.ts       # wiring NestJS: import DatabaseModule + AuthModule, export UsersService
-├── users.controller.ts   # HTTP boundary บาง ๆ: ผูก 4 route แล้วส่งต่อ service
-├── users.service.ts      # use case: ปฏิเสธ role, validate, ตรวจซ้ำ, hash, patchMe
-├── users.repository.ts   # Drizzle ตาราง users/credentials + toUserResponse (snake_case)
-└── argon2.ts             # hashPassword / verifyPassword — Argon2id ตาม [auth.argon2]
+├── users.controller.ts   # ขอบเขต HTTP — routes ทั้งหมดของ /users (บาง ไม่มี logic)
+├── users.service.ts      # use cases: ตรวจสิทธิ์สมัคร → validate → เช็คซ้ำ → hash → บันทึก
+├── users.repository.ts   # Drizzle queries ตาราง users/credentials (plain functions รับ Db)
+├── users.module.ts       # Nest module — imports DatabaseModule + AuthModule, export UsersService
+└── argon2.ts             # hash/verify รหัสผ่าน argon2id (ค่า params จาก config.toml)
 ```
 
 ## Business Rules
 
 **การสมัครสมาชิก**
 
-- สมัครเองได้เฉพาะ `researcher` — ระบบบันทึก `role: "researcher"` เสมอ
-- body ที่แนบ field `role` เข้ามาถูกปฏิเสธด้วย 400 `role_not_allowed`
-- เหตุผล (OC-1): role อื่นนอกจาก `researcher` สถาบันเป็นผู้สร้าง
-  > [!NOTE] **TODO: confirm** — ทั้ง repo ไม่มี code path สร้างบัญชี `admin` / `chief` / `committee` (register บังคับ researcher, `pnpm db:seed` ไม่สร้าง user role อื่น) — บัญชี role อื่นถูกสร้างด้วยกลไกใด (seed ภายนอก / SQL มือ)?
-- `account_type` เลือกได้ 2 แบบ:
-  - `institutional` — ต้องระบุ `organization` ซึ่งระบบเก็บเป็น `affiliation` ของ user
-  - `citizen` — ไม่มี affiliation
-- สมัครสำเร็จ: insert `users` + `credentials` ใน transaction เดียว แล้ว sign-in ทันที (`issueSessionFor` + Set-Cookie)
+- สมัครด้วยตัวเองได้เฉพาะ `researcher` — หาก body แนบ `role` มาด้วยถือเป็นการข้ามสิทธิ์ ปฏิเสธทันที (OC-1)
 
-**ฟิลด์ที่ยอมรับ**
+**ความซ้ำของข้อมูล**
 
-| พารามิเตอร์ | ค่าที่ยอมรับ | default |
-| --- | --- | --- |
-| `username` | regex `^[a-z0-9._-]+$` ยาว 3–30 ตัวอักษร | — |
-| `password` | ยาวอย่างน้อย 8 ตัว มีตัวอักษร ≥ 1 และตัวเลข ≥ 1 | — |
-| `confirm_password` | ต้องตรงกับ `password` | — |
-| `email` | รูปแบบอีเมล แล้ว normalize ด้วย trim + lowercase ก่อนบันทึก | — |
-| `phone` | regex `^\+?[\d\s-]{9,15}$` (optional) | — |
-| `orcid` | regex `^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$` (optional) | — |
-| `name`, `surname` | ยาวอย่างน้อย 1 ตัวอักษร | — |
+- `username` และ `email` ห้ามซ้ำในระบบ — `email` ตรวจแบบ normalize (lower + trim) และบังคับซ้ำด้วย unique constraint ที่ฐานข้อมูล (`users_email_normalized_uq`) อีกชั้น
 
-- body ผ่าน schema ไม่ได้ → 400 `field_invalid`
-- error ใช้ issue แรกของ Zod เป็น JSON pointer ใน `param`
+**รหัสผ่าน**
 
-**การเก็บรหัสผ่าน**
+- เก็บรหัสผ่านเป็น argon2id hash ในตาราง `credentials` เท่านั้น — ห้ามมี plaintext ทุกกรณี
+- object ผู้ใช้ที่ส่งออกทุกทาง (`toUserResponse`) ต้องไม่มี password hash หลุดออกไป
 
-| พารามิเตอร์ | ค่า | default |
-| --- | --- | --- |
-| `memoryCostKiB` | 19456 | — |
-| `timeCost` | 2 | — |
-| `parallelism` | 1 | — |
+**การเข้าถึง**
 
-- ค่าทั้งหมดอ่านจาก `config.toml` `[auth.argon2]` (OWASP minimum, ADR-0029)
-- โหลดครั้งเดียวตอน bootstrap — แก้แล้วต้อง restart
-- พารามิเตอร์ฝังอยู่ในตัว hash ด้วย จึงแก้ config แล้ว hash เดิมยัง verify ผ่าน
-
-**ความซ้ำของ username / email**
-
-- username ซ้ำ → 409 `username_taken`
-- email เทียบหลัง normalize: `lower(btrim(email))`
-- email ซ้ำ → 409 `email_taken`
-- DB บังคับซ้ำอีกชั้นด้วย unique index `users_email_normalized_uq`
-- ตรวจ username ว่างก็ normalize ก่อนเช่นกัน
-- query `username` หายไป → 400 `parameter_missing` ที่ `/username`
-
-**โปรไฟล์ตนเอง (me)**
-
-- `GET /users/me` และ `PATCH /users/me` ต้อง sign-in — ไม่พบ user → 401 `not_signed_in`
-- `PATCH /users/me` แก้ได้เฉพาะ `title`, `name`, `surname`, `email`
-- validate ไม่ผ่าน: field `email` → 400 `email_invalid`, field อื่น → 400 `name_required`
-- email ใหม่ซ้ำกับบัญชีอื่น → 409 `email_taken`
-- response เป็น snake_case ผ่าน `toUserResponse()` — password hash ไม่หลุดออก response เด็ดขาด
+- ดู/แก้โปรไฟล์ได้เฉพาะบัญชีตัวเอง — `GET`/`PATCH /users/me` อิงตัวตนจาก token ที่ sign-in แล้วเท่านั้น ไม่รับ username จาก request
 
 ## Usage
 
 | Route | Purpose |
 | --- | --- |
-| `POST /users` | สมัครสมาชิก researcher — จบด้วย session + Set-Cookie (`@Public()`) |
-| `GET /users/username-available` | ตรวจ username ว่าง (`@Public()`) |
-| `GET /users/me` | อ่านโปรไฟล์ผู้ใช้ปัจจุบัน |
-| `PATCH /users/me` | แก้ title / name / surname / email |
+| `POST /users` | สมัครสมาชิก — ได้ session + refresh cookie ทันที |
+| `GET /users/username-available` | เช็คว่า username ว่างหรือไม่ |
+| `GET /users/me` | ดูโปรไฟล์ของผู้ใช้ที่ sign-in อยู่ |
+| `PATCH /users/me` | แก้ไขโปรไฟล์ (คำนำหน้า ชื่อ อีเมล ข้อมูลติดต่อ) |
 
-Entry point ภายในสำหรับโมดูลอื่น:
-
-- `verifyPassword(passwordHash, password)` — เทียบรหัสผ่านกับ hash ที่เก็บไว้ `features/auth` เรียกตอน sign-in
-- `usersRepo.findByUsername` / `findCredential` / `toUserResponse` — `features/auth` ใช้อ่านข้อมูลผู้ใช้และแต่ง response
+Entry point สำหรับโมดูลอื่น: `verifyPassword(hash, password)` และ repository functions (`findCredential`, `findByUsername`, `toUserResponse`) — `auth` ใช้ตรวจรหัสผ่านและค้นบัญชีตอน sign-in
 
 ```ts
-// features/auth/auth.service.ts — ตรวจรหัสผ่านตอน sign-in
-const ok = await verifyPassword(credential.passwordHash, password);
+import { findCredential } from "@/features/users/users.repository.js";
+import { verifyPassword } from "@/features/users/argon2.js";
+
+// ใน auth.service — ตรวจรหัสผ่านตอน sign-in
+const cred = (await findCredential(db, username)).at(0);
+const ok = cred !== undefined && (await verifyPassword(cred.passwordHash, password));
 ```
 
-- ต้อง migrate ตาราง `users` + `credentials` ก่อน และ `config.toml` ต้องมีคีย์ `[auth.argon2]`
-- loader validate ทุกคีย์ตอน bootstrap — ใส่ผิดชนิด fail-fast
+- ตาราง `users`/`credentials` ต้อง migrate แล้ว (`pnpm db:migrate`)
+- config ต้องมีค่า `auth.argon2` ใน `config.toml` — โหลด fail-fast ตอนบูต
 
 ## Dependencies
 
 ### Internal
 
-| Module | Used in | Used for |
-| --- | --- | --- |
-| `features/auth` | `users.controller.ts` | `AuthService.issueSessionFor()`, `@Public()`, `@CurrentUser()`, `setRefreshCookie()` |
-| `shared/contracts` | `users.service.ts` | `registrationSchema`, `userProfileSchema`, `ORCID` และ enum `UserRole` / `AccountType` |
-| `shared/http` | `users.service.ts` | `ApiError` + `fieldInvalid` สำหรับ error envelope |
-| `shared/config` | `argon2.ts` | อ่านพารามิเตอร์ `[auth.argon2]` |
-| `database` | `users.repository.ts` | token `DB` และตาราง `users` / `credentials` |
+| Module | Used for |
+| --- | --- |
+| `features/auth` | ออก session + refresh cookie ทันทีหลังสมัคร (`issueSessionFor`, `setRefreshCookie`) |
+| `shared/contracts` | Zod schema ตรวจ input — `registrationSchema`, `userProfileSchema` |
+| `shared/http` | `ApiError`/`fieldInvalid` — โยน error เข้า error envelope กลาง |
+| `shared/config` | ค่า argon2 (memoryCost/timeCost/parallelism) จาก `config.toml` |
+| `database` | `DatabaseModule` ให้ connection (`DB`) และ schema ตาราง users/credentials |
 
 ### External packages
 
-| Package | Used in | Used for |
-| --- | --- | --- |
-| `argon2` | `argon2.ts` | hash และ verify รหัสผ่าน Argon2id |
-| `drizzle-orm` | `users.repository.ts` | query ตาราง users / credentials บน `NodePgDatabase` |
-| `zod` | `users.service.ts` | cast `ZodError` เพื่อสร้าง `fieldInvalid` |
-| `@nestjs/common` | controller / module | decorators และ DI (explicit `@Inject` เพราะ tsx ไม่ emit design:paramtypes) |
+| Package | Used for |
+| --- | --- |
+| `argon2` | hash และตรวจรหัสผ่าน argon2id |
+| `drizzle-orm` | query และ transaction กับ Postgres |
+| `zod` | ตรวจความถูกต้องของ input (`safeParse`) |
+| `@nestjs/common` | decorator controller/DI (`@Controller`, `@Inject`, `@Injectable`) |
 
 ### External services
 
-| Service | Used in | Used for | Impact |
-| --- | --- | --- | --- |
-| PostgreSQL | `users.repository.ts` | เก็บตาราง `users` + `credentials` | ล่ม → สมัครสมาชิกและอ่าน/แก้โปรไฟล์ใช้ไม่ได้ และ sign-in ล้มตาม |
+| Service | Used for | Impact |
+| --- | --- | --- |
+| PostgreSQL | เก็บตาราง `users` และ `credentials` | ล่ม → สมัคร/ดู/แก้โปรไฟล์ไม่ได้ทั้งโมดูล |
 
 ## Diagrams
 
-### Workflow — สมัครสมาชิก
+### Workflow — Registration
 
 ```mermaid
 swimlane-beta LR
-    subgraph client [Client]
+    subgraph ctrl [users.controller]
         A[POST /users]
     end
-    subgraph ctrl [users.controller]
-        B{แนบ field role?}
-    end
     subgraph svc [users.service]
+        B{body แนบ role?}
         C{registrationSchema ผ่าน?}
-        D{username หรือ email ซ้ำ?}
-        E[hashPassword — Argon2id]
+        D{username/email ซ้ำ?}
+        E[hashPassword]
     end
     subgraph repo [users.repository]
         F[transaction insert users + credentials]
     end
-    subgraph auth [features/auth]
-        G[issueSessionFor]
+    subgraph auth [auth.service]
+        G[issueSessionFor + set refresh cookie]
     end
     subgraph res [Response]
-        H[400 role_not_allowed]
-        I[400 field_invalid]
-        J[409 username_taken / email_taken]
-        K[200 session + Set-Cookie refresh_token]
+        H[400 role_not_allowed / field_invalid]
+        I[409 username_taken / email_taken]
+        J[session ใหม่]
     end
     A --> B
-    B -->|ใช่| H
-    B -->|ไม่| C
-    C -->|ไม่| I
+    B -->|แนบมา| H
+    B -->|ไม่มี| C
+    C -->|ไม่ผ่าน| H
     C -->|ผ่าน| D
-    D -->|ซ้ำ| J
+    D -->|ซ้ำ| I
     D -->|ไม่ซ้ำ| E
-    E --> F
-    F --> G
-    G --> K
-```
-
-### Sequence — สมัครสมาชิก (happy path)
-
-```mermaid
-sequenceDiagram
-    participant FE as Client
-    participant C as users.controller
-    participant S as users.service
-    participant R as users.repository
-    participant P as PostgreSQL
-    participant A as AuthService
-    FE->>C: POST /users
-    C->>S: register(body)
-    S->>R: usernameTaken + emailTaken (lower(btrim(email)))
-    R->>P: SELECT limit 1
-    alt username หรือ email ซ้ำ
-        S-->>FE: 409 username_taken / email_taken
-    else ผ่านทั้งหมด
-        S->>S: hashPassword — Argon2id 19456 KiB / timeCost 2
-        S->>R: register(input, passwordHash)
-        R->>P: BEGIN · INSERT users · INSERT credentials · COMMIT
-        R-->>S: UserRow
-        C->>A: issueSessionFor(user)
-        A-->>C: session + refresh token
-        C-->>FE: 200 session + Set-Cookie
-    end
+    E -->|password hash| F
+    F -->|user ใหม่| G
+    G -->|session + Set-Cookie| J
 ```
