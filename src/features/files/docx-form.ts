@@ -29,7 +29,7 @@ function decodeXml(s: string): string {
         const n = code[1] === "x" || code[1] === "X" ? Number.parseInt(code.slice(2), 16) : Number.parseInt(code.slice(1), 10);
         return Number.isNaN(n) ? m : String.fromCodePoint(n);
       }
-      return ENTITIES[`&${code}`] ?? m;
+      return ENTITIES[`&${code};`] ?? m;
     });
   }
   return out;
@@ -44,7 +44,9 @@ function textOf(xml: string): string {
 /** จับ checkbox ทั้งหมดใน block — state จาก w14:checked, label = ข้อความ block ตัด glyph ทิ้ง */
 function checkboxesIn(xml: string, label: string): FormCheckbox[] {
   const out: FormCheckbox[] = [];
-  for (const m of xml.matchAll(/<w14:checkbox>[\s\S]*?<w14:checked w14:val="(\d)"/g)) out.push({ label, checked: m[1] === "1" });
+  // label ตัด glyph ☒/☐ ที่ฝังมากับ w:sym ออก — state จริงอยู่ที่ w14:checked เท่านั้น
+  const clean = label.replace(/[☒☐☑□£]/g, " ").replace(/\s+/g, " ").trim();
+  for (const m of xml.matchAll(/<w14:checkbox>[\s\S]*?<w14:checked w14:val="(\d)"/g)) out.push({ label: clean, checked: m[1] === "1" });
   return out;
 }
 
