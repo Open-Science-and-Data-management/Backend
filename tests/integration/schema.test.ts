@@ -6,6 +6,7 @@ import {
   credentials,
   dmpVersions,
   dmps,
+  fileChunks,
   fileRecords,
   projectMembers,
   projects,
@@ -188,6 +189,31 @@ describe("file_records / tasks FK", () => {
       }),
     );
     expect(noUser).toContain("uploaded_by");
+  });
+});
+
+describe("file_chunks (FF2569 — SPEC ff2569 Task 5)", () => {
+  it("meta jsonb เก็บ/อ่านกลับได้ และ generic path (ไม่ส่ง meta) ได้ null", async () => {
+    await seedUser("22222222-2222-7222-8222-222222222221");
+    const [file] = await db
+      .insert(fileRecords)
+      .values({
+        uploadedBy: "22222222-2222-7222-8222-222222222221",
+        filename: "ff.docx",
+        fileType: "docx",
+        purpose: "proposal",
+        storagePath: "data/files/ff.docx",
+      })
+      .returning();
+    const rows = await db
+      .insert(fileChunks)
+      .values([
+        { fileId: file.fileId, chunkIndex: 0, content: "q", meta: { template_version: "ff2569-1.0", field_id: "Q3", section_id: "s1" } },
+        { fileId: file.fileId, chunkIndex: 1, content: "generic" },
+      ])
+      .returning();
+    expect(rows[0].meta).toEqual({ template_version: "ff2569-1.0", field_id: "Q3", section_id: "s1" });
+    expect(rows[1].meta).toBeNull();
   });
 });
 

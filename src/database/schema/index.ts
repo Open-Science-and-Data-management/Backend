@@ -254,6 +254,7 @@ export const fileChunks = pgTable(
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
     headingPath: text("heading_path"),
+    meta: jsonb("meta"), // FF2569 fast path (SPEC ff2569) — generic path ไม่เก็บ (null)
     embedding: real("embedding").array(), // 1024 dims — e5-large-instruct
     embeddingModel: varchar("embedding_model", { length: 127 }),
   },

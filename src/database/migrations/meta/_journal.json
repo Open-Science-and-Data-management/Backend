@@ -57,6 +57,13 @@
       "when": 1794112353196,
       "tag": "0008_cooing_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794380848525,
+      "tag": "0009_curious_talos",
+      "breakpoints": true
     }
   ]
 }

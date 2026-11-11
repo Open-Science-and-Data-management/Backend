@@ -76,6 +76,7 @@ const hits = await this.files.retrieve(claims, proposalFileId, "งบประ�
 ```
 
 - ต้องรัน `pnpm db:migrate` แล้ว (ตาราง `file_records`, `file_chunks`)
+- `file_chunks.meta` (jsonb, nullable) — chunk จาก fast path FF2569 เก็บ `{template_version, field_id, section_id, ...}`; generic path ไม่เก็บ (null) (SPEC ff2569, migration 0009)
 - ต้องตั้งค่า `[files]` ใน config.toml — `storagePath` และ `[files.rag]` (loader zod-validate แล้ว fail-fast)
 
 ## Dependencies
