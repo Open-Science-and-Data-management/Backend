@@ -22,6 +22,7 @@ const configSchema = z.object({
       chunkOverlapPercent: z.number().int().nonnegative(),
       topK: z.number().int().positive(),
       embeddingModel: z.string(),
+      formFastPath: z.boolean().default(true),
     }),
   }),
   ai: z.object({ mock: z.boolean().default(false), models: z.record(z.string()) }),

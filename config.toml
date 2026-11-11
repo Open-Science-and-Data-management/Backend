@@ -44,6 +44,10 @@ chunkTargetTokens = 450
 chunkOverlapPercent = 10
 topK = 5
 embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large-instruct ไม่มี onnx บน HF — ใช้ quantized เทียบเท่า 1024 dims (ADR-0028)
+#   formFastPath — true = docx ที่ตรง schema FF2569 ingest แบบ parse OOXML ตรง (SPEC ff2569):
+#     chunk ระดับ field, คำถามติดทุก chunk, meta jsonb — match ไม่ครบพอ → fallback generic เดิม + form_parsed: false
+#     false = ปิด fast path ทั้งหมด อัปโหลดผ่าน generic path เสมอ
+formFastPath = true
 
 [ai]                           # src/features/ai/
 _appliesTo = ["src/features/ai/"]

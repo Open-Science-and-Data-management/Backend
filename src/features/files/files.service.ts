@@ -8,8 +8,10 @@ import { EMBEDDING, type Embedding } from "@/shared/ports/embedding.js";
 import type { AccessClaims } from "@/features/auth/jwt.js";
 import { ProjectsService } from "@/features/projects/projects.service.js";
 import { DB } from "@/database/database.module.js";
-import { blocksToChunks } from "./chunking.js";
+import { blocksToChunks, fieldsToChunks } from "./chunking.js";
 import { parseDocx, parseDocxBlocks } from "./docx.js";
+import { parseDocxForm } from "./docx-form.js";
+import { extractFields } from "./form-extract.js";
 import type { Db, FileRow } from "./files.repository.js";
 import * as repo from "./files.repository.js";
 
@@ -40,12 +42,13 @@ export class FilesService {
     @Inject(ProjectsService) private readonly projectsService: ProjectsService,
   ) {}
 
+  /** upload response เพิ่ม `form_parsed` — response-only (SPEC ff2569 Q13) ไม่เก็น DB */
   async upload(
     claims: AccessClaims,
     projectId: string,
     file: { buffer: Buffer; size: number; mimetype: string; originalname: string } | undefined,
     purpose: string | undefined,
-  ): Promise<FileResponse> {
+  ): Promise<FileResponse & { form_parsed: boolean }> {
     await this.projectsService.assertVisible(claims, projectId);
     if (!purpose || !PURPOSES.includes(purpose as (typeof PURPOSES)[number])) {
       throw new ApiError(400, "invalid_purpose", "purpose must be proposal, task_deliverable or evidence", "/purpose");
@@ -63,26 +66,54 @@ export class FilesService {
     const fileType = file.mimetype === DOCX_MIME ? "docx" : file.mimetype === "application/pdf" ? "pdf" : "other";
     // parse → chunk → embed ก่อนเขียนทุกอย่าง — พังตรงไหน → 422 ไม่ทิ้งข้อมูลครึ่ง ๆ
     let extractedText: string | null = null;
+    let formParsed = false;
     let buildChunks: (fileId: string) => repo.ChunkInsert[] = () => [];
     if (fileType === "docx") {
       try {
         extractedText = await parseDocx(file.buffer);
-        const blocks = await parseDocxBlocks(file.buffer);
         const rag = config().files.rag;
-        const chunks = blocksToChunks(blocks, {
-          targetTokens: rag.chunkTargetTokens,
-          overlapPercent: rag.chunkOverlapPercent,
-        });
-        const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
-        buildChunks = (fileId) =>
-          chunks.map((c, i) => ({
-            fileId,
-            chunkIndex: c.chunk_index,
-            content: c.content,
-            headingPath: c.heading_path,
-            embedding: vectors[i],
-            embeddingModel: this.embedding.model,
-          }));
+        const chunkConfig = { targetTokens: rag.chunkTargetTokens, overlapPercent: rag.chunkOverlapPercent };
+        // fast path FF2569 (SPEC ff2569) — parse OOXML ตรง + extract ต่อ template schema;
+        // match ไม่ครบพอ (ไม่ใช่ฟอร์ม/โครงเพี้ยน) หรือ parse พัง → fallback generic เดิม (ไม่ error)
+        if (rag.formFastPath) {
+          try {
+            const raw = await parseDocxForm(file.buffer);
+            const result = extractFields(raw);
+            if (result.fields.length > 0 && result.misses.length <= result.fields.length) {
+              const chunks = fieldsToChunks(result.fields, chunkConfig);
+              const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
+              buildChunks = (fileId) =>
+                chunks.map((c, i) => ({
+                  fileId,
+                  chunkIndex: c.chunk_index,
+                  content: c.content,
+                  headingPath: c.heading_path,
+                  meta: c.meta,
+                  embedding: vectors[i],
+                  embeddingModel: this.embedding.model,
+                }));
+              formParsed = true;
+            } else {
+              console.warn(`files: FF2569 schema match failed (${String(result.misses.length)} misses) — fallback generic`);
+            }
+          } catch {
+            console.warn("files: form fast path parse failed — fallback generic");
+          }
+        }
+        if (!formParsed) {
+          const blocks = await parseDocxBlocks(file.buffer);
+          const chunks = blocksToChunks(blocks, chunkConfig);
+          const vectors = await this.embedding.embedPassages(chunks.map((c) => c.content));
+          buildChunks = (fileId) =>
+            chunks.map((c, i) => ({
+              fileId,
+              chunkIndex: c.chunk_index,
+              content: c.content,
+              headingPath: c.heading_path,
+              embedding: vectors[i],
+              embeddingModel: this.embedding.model,
+            }));
+        }
       } catch (error) {
         if (error instanceof ApiError) throw error;
         throw new ApiError(422, "file_unparseable", "The .docx file could not be read");
@@ -103,7 +134,7 @@ export class FilesService {
       },
       buildChunks,
     );
-    return repo.toFileResponse(row);
+    return { ...repo.toFileResponse(row), form_parsed: formParsed };
   }
 
   async list(

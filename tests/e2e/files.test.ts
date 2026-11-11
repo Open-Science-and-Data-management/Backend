@@ -2,13 +2,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import { AppModule } from "@/app.module.js";
 import { createDb } from "@/database/client.js";
-import { credentials, dmps, fileRecords, projects, users } from "@/database/schema/index.js";
+import { credentials, dmps, fileChunks, fileRecords, projects, users } from "@/database/schema/index.js";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/uni";
 const { pool, db } = createDb(DATABASE_URL);
@@ -216,6 +216,38 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
     const disposition = download.headers["content-disposition"] as string;
     expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(THAI)}`);
     expect(disposition).toMatch(/^[\x20-\x7e]+$/); // fallback ASCII-only — ไม่งั้น HTTP parser ปฏิเสธ response
+  });
+
+  it("FF2569 fast path — form_parsed true + chunks มี meta; docx ธรรมดา fallback form_parsed false (SPEC ff2569)", async () => {
+    // FF fixture → fast path: chunk ระดับ field, meta jsonb ครบทุก chunk
+    const ff = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/files`)
+      .set("Authorization", `Bearer ${token}`)
+      .field("purpose", "proposal")
+      .attach("file", await fixture("ff2569-proposal.docx"), { filename: "ff2569.docx", contentType: DOCX_MIME });
+    expect(ff.status).toBe(201);
+    expect(ff.body.form_parsed).toBe(true);
+
+    const ffChunks = await db.select().from(fileChunks).where(eq(fileChunks.fileId, ff.body.file_id)).orderBy(fileChunks.chunkIndex);
+    expect(ffChunks.length).toBeGreaterThan(0);
+    for (const c of ffChunks) {
+      expect(c.meta).not.toBeNull();
+      expect(c.meta).toHaveProperty("field_id");
+      expect(c.headingPath).not.toBeNull();
+    }
+
+    // docx ธรรมดา → fallback generic เดิม + flag false + chunks ไม่มี meta (regression)
+    const plain = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/files`)
+      .set("Authorization", `Bearer ${token}`)
+      .field("purpose", "proposal")
+      .attach("file", await fixture("proposal-sample.docx"), { filename: "plain.docx", contentType: DOCX_MIME });
+    expect(plain.status).toBe(201);
+    expect(plain.body.form_parsed).toBe(false);
+
+    const plainChunks = await db.select().from(fileChunks).where(eq(fileChunks.fileId, plain.body.file_id));
+    expect(plainChunks.length).toBeGreaterThan(0);
+    for (const c of plainChunks) expect(c.meta).toBeNull();
   });
 
   it("archive + delete + 409 file_in_use", async () => {
