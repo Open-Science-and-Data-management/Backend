@@ -349,5 +349,29 @@ export function extractFields(doc: RawFormDocument, tpl: Ff2569Template = ff2569
     });
   }
 
+  // ── post-pass (Rev 2, D8): รูปในช่วง section ของ field แบบ image ที่จับไม่ได้ใน window ของตัวเอง ──
+  // รูปบางใบวางก่อน/หลังย่อหน้าคำอธิบาย (นอก window คำถาม→คำถามถัดไป) → ผูกเป็น imageRid ของ field แบบ image ตัวแรกที่ match;
+  // ช่วง = block คำถามของ field → สิ้นสุด section (block คำถามแรกของ section ถัดไป); รูปที่ผูก field อื่นไปแล้วไม่ถูกแย่ง
+  const matchByAnchor = new Map(matches.map((m) => [m.anchor, m]));
+  const imageAnchors = anchors.filter((a) => a.type === "image" && matchByAnchor.has(a));
+  const boundRids = new Set(fields.map((f) => f.imageRid).filter((r) => r !== null));
+  for (const imgAnchor of imageAnchors) {
+    const imgField = fields.find((f) => f.fieldId === imgAnchor.fieldId);
+    if (!imgField || imgField.imageRid !== null) continue;
+    const start = matchByAnchor.get(imgAnchor)!.block;
+    const anchorIdx = anchors.indexOf(imgAnchor);
+    const nextSectionBlock = anchors
+      .slice(anchorIdx + 1)
+      .filter((a) => a.sectionId !== imgAnchor.sectionId && matchByAnchor.has(a))
+      .map((a) => matchByAnchor.get(a)!.block)
+      .sort((x, y) => x - y)[0];
+    const end = nextSectionBlock ?? Number.POSITIVE_INFINITY;
+    const loose = images.find((im) => im.block > start && im.block < end && !boundRids.has(im.rid));
+    if (loose) {
+      imgField.imageRid = loose.rid;
+      boundRids.add(loose.rid);
+    }
+  }
+
   return { fields, misses };
 }

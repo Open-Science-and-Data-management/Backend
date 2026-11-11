@@ -112,3 +112,70 @@ describe("extractFields (fixture FF2569)", () => {
     expect(fw?.imageRid).toBe("rId15");
   });
 });
+
+// ── synthetic (Rev 2, D8): ตำแหน่งรูปใน s2 ยืดหยุ่น ──────────────────────────
+import type { RawFormDocument } from "@/features/files/docx-form.js";
+
+function syntheticDoc(paras: string[], images: Array<[string, number]> = []): RawFormDocument {
+  return {
+    paragraphs: paras,
+    paragraphBlocks: paras.map((_, i) => i),
+    tables: [],
+    tableBlocks: [],
+    checkboxes: [],
+    images: images.map(([rid]) => rid),
+    imageBlocks: images.map(([, block]) => block),
+    rels: {},
+  };
+}
+
+const S2_Q = {
+  summary: "บทสรุปข้อเสนอโครงการ",
+  framework: "กรอบการวิจัย/พัฒนา (แผนภาพ)",
+  description: "จากรูปข้างต้น คำอธิบายกรอบการวิจัย/พัฒนา (Input–Process–Output)",
+  methodology: "ระเบียบวิธีวิจัยและวิธีการดำเนินการวิจัย", // s2 field ถัดไปหลัง framework_description
+};
+
+describe("extractFields — D8 image ตำแหน่งยืดหยุ่นใน s2", () => {
+  // เอาเฉพาะ field s2 ที่เกี่ยว (extractFields ใช้ tpl ตามลำดับ anchor — ไม่งั้น anchor s0/s1 เดิน cursor เกินก่อน)
+  const tpl = {
+    ...ff2569Template,
+    fields: ff2569Template.fields.filter((f) => ["executive_summary", "research_framework", "framework_description"].includes(f.fieldId)),
+  };
+
+  it("รูปวางหลัง text อธิบาย (นอก window ของคำถาม image) → ยังได้ imageRid", () => {
+    const doc = syntheticDoc(
+      [
+        "หัวข้ออื่น",
+        S2_Q.summary,
+        "บทสรุปบางอย่าง",
+        S2_Q.framework,
+        S2_Q.description,
+        "คำอธิบายกรอบการวิจัย Input–Process–Output เป็นต้น",
+        // รูปมาหลังย่อหน้าอธิบาย — หลุด window ของ research_framework (จบที่คำถาม framework_description)
+      ],
+      [["rId99", 6]],
+    );
+    const r = extractFields(doc, tpl);
+    const fw = r.fields.find((f) => f.fieldId === "research_framework");
+    expect(fw?.imageRid).toBe("rId99");
+    expect(r.misses.filter((m) => m === "research_framework" || m === "framework_description")).toEqual([]);
+  });
+
+  it("รูปวางก่อน text อธิบาย (ใน window ตัวเอง) → ผูกปกติ และ post-pass ไม่แย่งรูปอื่น", () => {
+    const doc = syntheticDoc(
+      [
+        S2_Q.summary,
+        S2_Q.framework,
+        // รูปใน window ของ research_framework (ก่อนคำถาม framework_description)
+        S2_Q.description,
+        "คำอธิบายกรอบการวิจัย",
+        "ระเบียบวิธีบางอย่าง",
+      ],
+      [["rId10", 2], ["rId11", 5]], // rId11 อยู่ท้ายสุด — ถูกผูกก่อนแล้ว (window) ไม่มี field ไปแย่ง
+    );
+    const r = extractFields(doc, tpl);
+    const fw = r.fields.find((f) => f.fieldId === "research_framework");
+    expect(fw?.imageRid).toBe("rId10"); // ผูกใน window ตัวเองก่อน ไม่ถูก post-pass เปลี่ยน
+  });
+});
