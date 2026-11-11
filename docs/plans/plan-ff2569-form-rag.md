@@ -38,13 +38,13 @@
 ### Phase 3: Wiring & Retrieval
 - [x] Task 6: upload fast path + fallback flag (`files.service.ts`, config knob, `docs/api/files.md`, e2e)
 - [x] Task 7: VLM caption best-effort (config-gated, mock client ใน test) — model = `qwen/qwen3-vl-30b-a3b-instruct` (ผู้ใช้เลือก, ต่างจาก default เดิมที่วางไว้)
-- [ ] Task 8: parent-expansion helper + `read_proposal` ใช้ section เต็ม
-- [ ] Task 9: golden QA integration suite (hit@5/MRR threshold)
+- [x] Task 8: parent-expansion helper + `read_proposal` ใช้ section เต็ม
+- [x] Task 9: golden QA integration suite (hit@5/MRR threshold)
 
 ### Checkpoint: Complete
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` เขียวทั้งชุด (e2e บน Postgres จริง)
-- [ ] FF fixture: `form_parsed: true`, chunks มี meta/heading_path ครบ; `proposal-sample.docx`: fallback `form_parsed: false` พฤติกรรม chunks เดิม (regression)
-- [ ] Golden QA hit@5 ≥ 0.8
+- [x] `pnpm lint && pnpm typecheck && pnpm test` เขียวทั้งชุด (e2e บน Postgres จริง)
+- [x] FF fixture: `form_parsed: true`, chunks มี meta/heading_path ครบ; `proposal-sample.docx`: fallback `form_parsed: false` พฤติกรรม chunks เดิม (regression)
+- [x] Golden QA hit@5 ≥ 0.8 (วัดจริง: hit@5 = 0.977, MRR = 0.922, n = 44 คำถามครบทุก section — `tests/integration/golden-qa.test.ts`)
 
 ## Risks and Mitigations
 
