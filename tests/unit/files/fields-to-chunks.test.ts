@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { fieldsToChunks, type ChunkWithMeta } from "@/features/files/chunking.js";
+import { fieldsToChunks } from "@/features/files/chunking.js";
 import { parseDocxForm } from "@/features/files/docx-form.js";
 import { extractFields, type ExtractedField } from "@/features/files/form-extract.js";
 import { ff2569Template, type Ff2569Template } from "@/features/files/templates/ff2569.js";

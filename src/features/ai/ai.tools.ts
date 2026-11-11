@@ -49,8 +49,8 @@ export class AiTools {
         if (proposalFileId === undefined || proposalFileId === null || proposalFileId === "") return NO_PROPOSAL;
         const chunks = await filesRepo.chunksOfFile(this.db, proposalFileId);
         if (chunks.length === 0) return NO_PROPOSAL;
-        // parent-expansion (SPEC ff2569 Task 8, research §Q14) — row-chunk ตารางไม่ซ้ำกับ parent,
-        // pack ต่อ heading_path ให้โมเดลเห็น section เต็ม; generic path ก็ได้ section เดียวต่อหัวข้อ
+        // pack ต่อ heading_path (SPEC ff2569 Task 8, research §Q14) ให้โมเดลเห็น section เต็ม
+        // — expandToSections จัดกลุ่มจาก heading_path ล้วน (meta ไม่มีกลไก parent แล้ว)
         return expandToSections(
           chunks.map((c) => ({ chunk_index: c.chunkIndex, content: c.content, heading_path: c.headingPath, meta: c.meta })),
         )

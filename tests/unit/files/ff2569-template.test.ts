@@ -88,10 +88,11 @@ describe("ff2569Template", () => {
     const ids = new Set(fields.map((f) => f.fieldId));
     const seen = new Map<string, string>();
     for (const g of ff2569Template.chunkGroups ?? []) {
+      const gid = g.id;
       for (const fid of g.fieldIds) {
-        expect(ids.has(fid), `${g.id}: unknown fieldId ${fid}`).toBe(true);
-        expect(seen.has(fid), `field ${fid} ซ้ำข้าม group (${seen.get(fid)}, ${g.id})`).toBe(false);
-        seen.set(fid, g.id);
+        expect(ids.has(fid), `${gid}: unknown fieldId ${fid}`).toBe(true);
+        expect(seen.has(fid), `field ${fid} ซ้ำข้าม group (${String(seen.get(fid))}, ${gid})`).toBe(false);
+        seen.set(fid, gid);
       }
     }
   });

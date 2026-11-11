@@ -82,6 +82,6 @@
   - Scope: Medium
 
 ### Checkpoint: Complete
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` เขียว (milestone gate = e2e green ตาม repo)
-- [ ] FF fixture: `form_parsed: true` + meta/heading_path ครบ; generic docx: fallback + regression-safe
-- [ ] Golden QA hit@5 ≥ 0.8
+- [x] `pnpm lint && pnpm typecheck && pnpm test` เขียว (milestone gate = e2e green ตาม repo)
+- [x] FF fixture: `form_parsed: true` + meta/heading_path ครบ; generic docx: fallback + regression-safe
+- [x] Golden QA hit@5 ≥ 0.8 — 0.955 (MRR 0.890)

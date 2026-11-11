@@ -249,12 +249,12 @@ describe.skipIf(!dbReady)("files e2e — flow #18", () => {
       expect(c.headingPath).not.toBeNull();
     }
 
-    // VLM caption (Task 7): ฟิลด์ research_framework ได้ chunk จาก caption — mock caption ไหลผ่าน flow
+    // VLM caption (Task 7/R7): caption และ text อธิบาย (framework_description) อยู่ chunk เดียวของ group s2
     const imgChunk = ffChunks.find((c) => fieldIdsOf(c.meta).includes("research_framework"));
     expect(imgChunk).toBeDefined();
-    expect(imgChunk?.content.startsWith("กรอบการวิจัย/พัฒนา (แผนภาพ)")).toBe(true);
+    expect(imgChunk?.headingPath).toBe("ส่วนที่ 2 ข้อมูลโครงการ > รูปภาพ");
     expect(imgChunk?.content).toContain("vlm_caption"); // marker ของ MockAiClient — caption ไหลผ่าน flow จริง
-    expect(imgChunk?.headingPath).toContain("ส่วนที่ 2");
+    expect(imgChunk?.content).toContain("Input–Process–Output"); // text อธิบายของ framework_description ใน chunk เดียวกัน
 
     // usage ของ caption นับโควตาผู้อัปโหลด (ADR-0023) — mock usage คงที่ ceil(50 + (100-20) + 20×0.1) = 132/รูป
     const [quota] = await db.select({ used: users.aiTokenUsed }).from(users).where(eq(users.username, USER.username));

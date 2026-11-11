@@ -357,15 +357,16 @@ export function extractFields(doc: RawFormDocument, tpl: Ff2569Template = ff2569
   const boundRids = new Set(fields.map((f) => f.imageRid).filter((r) => r !== null));
   for (const imgAnchor of imageAnchors) {
     const imgField = fields.find((f) => f.fieldId === imgAnchor.fieldId);
-    if (!imgField || imgField.imageRid !== null) continue;
-    const start = matchByAnchor.get(imgAnchor)!.block;
+    const anchorMatch = matchByAnchor.get(imgAnchor);
+    if (!imgField || imgField.imageRid !== null || anchorMatch === undefined) continue;
+    const start = anchorMatch.block;
     const anchorIdx = anchors.indexOf(imgAnchor);
-    const nextSectionBlock = anchors
+    const sortedNextBlocks = anchors
       .slice(anchorIdx + 1)
       .filter((a) => a.sectionId !== imgAnchor.sectionId && matchByAnchor.has(a))
-      .map((a) => matchByAnchor.get(a)!.block)
-      .sort((x, y) => x - y)[0];
-    const end = nextSectionBlock ?? Number.POSITIVE_INFINITY;
+      .map((a) => matchByAnchor.get(a)?.block ?? Number.POSITIVE_INFINITY)
+      .sort((x, y) => x - y);
+    const end = sortedNextBlocks.length > 0 ? sortedNextBlocks[0] : Number.POSITIVE_INFINITY;
     const loose = images.find((im) => im.block > start && im.block < end && !boundRids.has(im.rid));
     if (loose) {
       imgField.imageRid = loose.rid;

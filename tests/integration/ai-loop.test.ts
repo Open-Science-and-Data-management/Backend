@@ -192,7 +192,7 @@ describe.skipIf(!dbReady)("react loop + tools (integration)", () => {
     const baseMeta = { template_version: "FF2569", field_id: "work_plan", section_id: "s3_plan" };
     await db.insert(fileChunks).values([
       { fileId: file.fileId, chunkIndex: 0, content: "แผนการดำเนินงาน\n| ปีที่ | กิจกรรม |", headingPath: H, meta: baseMeta },
-      { fileId: file.fileId, chunkIndex: 1, content: "แผนการดำเนินงาน\nปีที่ 1: ศึกษาข้อมูล", headingPath: H, meta: { ...baseMeta, table_row: 0, parent_chunk_index: 0 } },
+      { fileId: file.fileId, chunkIndex: 1, content: "แผนการดำเนินงาน\nปีที่ 1: ศึกษาข้อมูล", headingPath: H, meta: { ...baseMeta } },
       { fileId: file.fileId, chunkIndex: 2, content: "ท้ายเอกสาร", headingPath: null, meta: null },
     ]);
     await db.update(projects).set({ proposalFileId: file.fileId }).where(eq(projects.projectId, projectId));

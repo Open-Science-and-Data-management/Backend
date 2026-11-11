@@ -32,7 +32,7 @@ files/
 ├── docx.ts               # แตก .docx เป็น plain text + blocks (heading 1–3 / paragraph) ด้วย mammoth
 ├── docx-form.ts          # parse OOXML ตรง (jszip) — paragraphs/tables/checkbox (w14:checked)/images + block ordinal
 ├── form-extract.ts       # pure functions — match เอกสารเข้า template schema ต่อ field (tolerant matching, sequential cursor, negation-aware enum)
-├── chunking.ts           # pure functions — blocksToChunks (generic) + fieldsToChunks (fast path) ตาม target token + overlap จาก config.toml
+├── chunking.ts           # pure functions — blocksToChunks (generic) + fieldsToChunks (fast path: chunk ระดับ chunkGroup — field ในกลุ่มรวม chunk เดียว field_ids ครบ, ตารางเต็มตารางเดียว cap chunkTableMaxTokens แตก part i/n ที่ขอบแถว, field นอกกลุ่ม chunk ราย field) ตาม target token + overlap จาก config.toml
 ├── retrieval.ts          # pure helper — expandToSections: pack ต่อ heading_path เป็น section เต็ม (read_proposal)
 └── templates/
     └── ff2569.ts         # schema ฟอร์ม FF2569 (zod-validated) — fieldId/sectionId/enum labels — single source of truth ของการ map เอกสาร
@@ -122,7 +122,7 @@ const hits = await this.files.retrieve(
 | --- | --- | --- |
 | PostgreSQL | เก็บ `file_records`, `file_chunks` — metadata, chunks, vectors | ล่ม → อัปโหลด/ลิสต์/ค้นหาใช้ไม่ได้ทั้งโมดูล |
 | Local disk | เก็บ blob เนื้อไฟล์จริง — ที่อยู่จาก `files.storagePath` | ไฟล์หาย → ดาวน์โหลดตอบ 410 `file_content_gone` |
-| ONNX embedding runtime | รันโมเดล `Xenova/multilingual-e5-large` — CUDA fp16 ก่อน fallback CPU q8 | ล่ม → อัปโหลด .docx และ `retrieve()` ใช้ไม่ได้ |
+| ONNX embedding runtime | รันโมเดลจาก `files.rag.embeddingModel` (ปัจจุบัน Qwen3-Embedding-0.6B — last-token pooling; e5 = mean pooling + prefix เลือกอัตโนมัติจากชื่อโมเดล) — CUDA fp16 ก่อน sticky fallback CPU q8, input truncate ที่ `embeddingMaxTokens` | ล่ม → อัปโหลด .docx และ `retrieve()` ใช้ไม่ได้ |
 | OpenRouter (VLM) | caption รูปในฟิลด์แบบ image ตอน fast path (`files.rag.vlmModel`) | ล่ม/quota หมด → ข้าม caption + warn — อัปโหลดยังสำเร็จ (best-effort) |
 
 ## Diagrams

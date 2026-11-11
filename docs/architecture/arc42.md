@@ -489,7 +489,7 @@ sequenceDiagram
     FE->>BE: POST /projects/{id}/files
     BE->>BE: parse mammoth (in-process) → extracted text
     BE->>BE: chunk ตาม heading/ย่อหน้า<br/>(~400–500 token, overlap ~10% — tunable)
-    BE->>BE: embed ทุก chunk ด้วย multilingual-e5-large-instruct<br/>(in-process · ไม่นับโควตา AI ·<br/>ล้มเหลว → 422 เหมือน parse ไม่ได้)
+    BE->>BE: embed ทุก chunk ด้วย Qwen3-Embedding-0.6B<br/>(in-process · ไม่นับโควตา AI ·<br/>ล้มเหลว → 422 เหมือน parse ไม่ได้)
     BE->>DB: file_records (extracted text)<br/>+ file_chunks (chunk_index, heading_path,<br/>embedding_model, embedding real[])
     BE-->>FE: สำเร็จ — เวกเตอร์ cache ผูก file_id<br/>(เอกสารตัวเดียวใช้จนจบโปรเจกต์ ไม่ embed ซ้ำ)
     end
@@ -686,9 +686,11 @@ storagePath = "data/files"
 
 [files.rag]                    # ADR-0025
 chunkTargetTokens = 450        # ตัดตาม heading/ย่อหน้า แล้ว pack ถึงขนาดเป้า
+chunkTableMaxTokens = 4096     # cap chunk ตาราง — เกิน → part i/n ตัดที่ขอบแถว (Rev 2, D7)
 chunkOverlapPercent = 10
 topK = 5
-embeddingModel = "intfloat/multilingual-e5-large-instruct" # 1024 dims (ADR-0028) — เปลี่ยน → re-embed ทั้งไฟล์อัตโนมัติ (embedding_model column)
+embeddingModel = "onnx-community/Qwen3-Embedding-0.6B-ONNX" # last-token pooling, 1024 dims (ADR-0031) — เปลี่ยน → re-embed ทั้งไฟล์อัตโนมัติ (embedding_model column)
+embeddingMaxTokens = 1024      # cap input embedding (tokenizer truncate) — เครื่อง RAM น้อยลดค่านี้ (ADR-0031)
 
 [ai]                           # src/features/ai/
 _appliesTo = ["src/features/ai/"]
