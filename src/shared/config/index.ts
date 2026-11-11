@@ -19,6 +19,8 @@ const configSchema = z.object({
     storagePath: z.string(),
     rag: z.object({
       chunkTargetTokens: z.number().int().positive(),
+      // cap ขนาด chunk ตาราง (tokens) — ตารางเกิน → แตก part i/n ตัดที่ขอบแถว (Rev 2, D7)
+      chunkTableMaxTokens: z.number().int().positive(),
       chunkOverlapPercent: z.number().int().nonnegative(),
       topK: z.number().int().positive(),
       embeddingModel: z.string(),

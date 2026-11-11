@@ -26,12 +26,16 @@
 ```text
 files/
 ├── files.controller.ts   # HTTP boundary — รับ multipart (multer) และตั้ง header ให้ /content
-├── files.service.ts      # use cases — ตรวจสิทธิ์/ขนาด/ชนิดไฟล์, supersede, evidence protection, retrieve()
+├── files.service.ts      # use cases — ตรวจสิทธิ์/ขนาด/ชนิดไฟล์, supersede, evidence protection, fast path FF2569 + VLM caption, retrieve()
 ├── files.repository.ts   # Drizzle query — file_records/file_chunks, insertWithChunks (transaction เดียว)
-├── files.module.ts       # ผูก provider — DiskStorage + TransformersEmbedding, export FilesService
+├── files.module.ts       # ผูก provider — DiskStorage + TransformersEmbedding + AI_CLIENT (OpenRouter/Mock), export FilesService
 ├── docx.ts               # แตก .docx เป็น plain text + blocks (heading 1–3 / paragraph) ด้วย mammoth
-├── chunking.ts           # pure functions — ตัด blocks เป็น chunks ตาม target token + overlap จาก config.toml
-└── retrieval.ts          # pure helper — parent-expansion expandToSections (SPEC ff2569 Task 8): row-chunk → parent + pack ต่อ heading_path
+├── docx-form.ts          # parse OOXML ตรง (jszip) — paragraphs/tables/checkbox (w14:checked)/images + block ordinal
+├── form-extract.ts       # pure functions — match เอกสารเข้า template schema ต่อ field (tolerant matching, sequential cursor, negation-aware enum)
+├── chunking.ts           # pure functions — blocksToChunks (generic) + fieldsToChunks (fast path) ตาม target token + overlap จาก config.toml
+├── retrieval.ts          # pure helper — parent-expansion expandToSections (SPEC ff2569 Task 8): row-chunk → parent + pack ต่อ heading_path
+└── templates/
+    └── ff2569.ts         # schema ฟอร์ม FF2569 (zod-validated) — fieldId/sectionId/enum labels — single source of truth ของการ map เอกสาร
 ```
 
 ## Business Rules
@@ -58,6 +62,11 @@ files/
 
 - chunk ทุกตัวต้องมาจากโมเดล embedding เดียวกับ `files.rag.embeddingModel` — เจอ vector จากโมเดลเก่าจะ re-embed ก่อนคำนวณ cosine ทุกครั้ง เพื่อกันการเทียบคะแนนข้ามโมเดล
 
+**Ingest ฟอร์ม FF2569 (fast path)**
+
+- เอกสารที่ extract ไม่ได้ field, match ไม่ครบ (misses > fields) หรือ parse OOXML พัง ต้อง fallback generic path เสมอ — อัปโหลดยังสำเร็จปกติ เพราะไม่ใช่ฟอร์มไม่ใช่เหตุปฏิเสธไฟล์
+- VLM caption เป็น best-effort — quota หมด/เรียกพลาด/ฟอร์แมตรูปที่โมเดลไม่รองรับ (emf/wmf) ต้องข้ามแล้ว warn ห้ามทำให้อัปโหลดล้ม และ usage ทุก call ต้องนับโควตาผู้อัปโหลดผ่าน reconcile เดิม (ADR-0023)
+
 ## Usage
 
 | Route | Purpose |
@@ -72,13 +81,17 @@ Entry point สำหรับโมดูลอื่น: `FilesService.retriev
 
 ```ts
 // features/ai — ค้นเนื้อหา proposal ด้วย semantic search (ADR-0025)
-const hits = await this.files.retrieve(claims, proposalFileId, "งบประมาณรวมของโครงการ");
+const hits = await this.files.retrieve(
+  claims,
+  proposalFileId,
+  "งบประมาณรวมของโครงการ",
+);
 // ได้ [{ content, heading_path, score }] เรียงจากมากไปน้อย จำกัดตาม files.rag.topK
 ```
 
 - ต้องรัน `pnpm db:migrate` แล้ว (ตาราง `file_records`, `file_chunks`)
-- `file_chunks.meta` (jsonb, nullable) — chunk จาก fast path FF2569 เก็บ `{template_version, field_id, section_id, ...}`; generic path ไม่เก็บ (null) (SPEC ff2569, migration 0009)
-- ต้องตั้งค่า `[files]` ใน config.toml — `storagePath` และ `[files.rag]` (loader zod-validate แล้ว fail-fast)
+- `file_chunks.meta` (jsonb, nullable) — chunk จาก fast path FF2569 เก็บ `{template_version, field_id, section_id, enum_value?, part/parts?, table_row?, parent_chunk_index?}`; generic path ไม่เก็บ (null) (SPEC ff2569, migration 0009)
+- ต้องตั้งค่า `[files]` ใน config.toml — `storagePath` และ `[files.rag]` รวม knob `formFastPath` (ปิด/เปิด fast path) กับ `vlmModel` (ตั้งค่าว่างเพื่อปิด VLM caption) (loader zod-validate แล้ว fail-fast)
 
 ## Dependencies
 
@@ -88,15 +101,18 @@ const hits = await this.files.retrieve(claims, proposalFileId, "งบประ�
 | --- | --- |
 | `features/auth` | รับตัวตนผู้ใช้ (`AccessClaims`, `@CurrentUser()`) จาก global AuthGuard |
 | `features/projects` | ตรวจสิทธิ์เข้าถึงโปรเจกต์ด้วย `assertVisible()` |
+| `features/ai` | นับโควตา VLM caption ผ่าน `chargeQuota()` (reconcile ADR-0023) — AiModule import กลับมาไม่ได้ จึง bind `AI_CLIENT` เอง |
 | `database` | schema `file_records` / `file_chunks` และ connection ผ่าน token `DB` |
-| `shared/ports` | interface `FileStorage` และ `Embedding` ที่ service inject |
-| `shared/adapters` | implementation `DiskStorage` (จัดเก็บ blob) และ `TransformersEmbedding` (สร้าง vector) |
+| `shared/config` | ค่าตั้ง `[files]` / `[files.rag]` จาก config.toml |
+| `shared/ports` | interface `FileStorage`, `Embedding`, `AiClient` ที่ service inject |
+| `shared/adapters` | implementation `DiskStorage` (blob), `TransformersEmbedding` (vector), `OpenRouterClient`/`MockAiClient` (VLM caption) |
 
 ### External packages
 
 | Package | Used for |
 | --- | --- |
 | `mammoth` | แตกข้อความและ blocks (heading/paragraph) จาก .docx |
+| `jszip` | อ่าน OOXML ของ .docx ตรงสำหรับฟอร์ม (parseDocxForm / readDocxImage) |
 | `@nestjs/platform-express` | รับ multipart upload เป็น buffer ใน memory (multer) |
 | `drizzle-orm` | query + transaction กับ Postgres |
 
@@ -107,6 +123,7 @@ const hits = await this.files.retrieve(claims, proposalFileId, "งบประ�
 | PostgreSQL | เก็บ `file_records`, `file_chunks` — metadata, chunks, vectors | ล่ม → อัปโหลด/ลิสต์/ค้นหาใช้ไม่ได้ทั้งโมดูล |
 | Local disk | เก็บ blob เนื้อไฟล์จริง — ที่อยู่จาก `files.storagePath` | ไฟล์หาย → ดาวน์โหลดตอบ 410 `file_content_gone` |
 | ONNX embedding runtime | รันโมเดล `Xenova/multilingual-e5-large` — CUDA fp16 ก่อน fallback CPU q8 | ล่ม → อัปโหลด .docx และ `retrieve()` ใช้ไม่ได้ |
+| OpenRouter (VLM) | caption รูปในฟิลด์แบบ image ตอน fast path (`files.rag.vlmModel`) | ล่ม/quota หมด → ข้าม caption + warn — อัปโหลดยังสำเร็จ (best-effort) |
 
 ## Diagrams
 
@@ -147,37 +164,46 @@ swimlane-beta LR
 ### Data Flow — docx upload pipeline
 
 ```mermaid
-swimlane-beta TB
+swimlane-beta LR
     subgraph http [files.controller]
         A[multipart buffer จาก multer]
-        B{size > maxFileSizeMb?}
-        R1[413 file_too_large]
-        R2[FileResponse]
     end
     subgraph svc [files.service]
-        C{fileType === docx?}
+        C{fileType === docx ∧ formFastPath?}
+        D{fields > 0 ∧ misses ≤ fields?}
+        E[captionImages — VLM best-effort]
     end
-    subgraph parse [docx.ts + chunking.ts]
-        D[parseDocx / parseDocxBlocks]
-        E[blocksToChunks]
+    subgraph form [docx.ts + docx-form.ts + form-extract.ts]
+        P[parseDocx]
+        F[parseDocxForm — OOXML ตรง]
+        G[extractFields — เทียบ templates/ff2569]
+        Q[parseDocxBlocks — fallback generic]
+    end
+    subgraph chunk [chunking.ts]
+        H[fieldsToChunks — chunk + meta jsonb]
+        I[blocksToChunks]
     end
     subgraph embed [TransformersEmbedding]
-        F[embedPassages]
+        J[embedPassages]
     end
     subgraph store [files.repository + DiskStorage]
-        G[storage.put → storagePath]
-        H[insertWithChunks — file + chunks + supersede]
+        K[storage.put → storagePath]
+        L[insertWithChunks — file + chunks + supersede]
     end
-    A --> B
-    B -->|เกิน| R1
-    B -->|ไม่เกิน| C
-    C -->|ใช่| D
-    C -->|ไม่ใช่ docx| G
-    D --> E
-    E --> F
+    A --> C
+    C -->|ใช่| P
+    C -->|ไม่ใช่ docx| K
+    P --> F
     F --> G
-    G --> H
-    H --> R2
+    G --> D
+    D -->|ผ่าน — fast path| E
+    D -->|ไม่ผ่าน| Q
+    E --> H
+    Q --> I
+    H --> J
+    I --> J
+    J --> K
+    K --> L
 ```
 
 ### Entity-Relationship — file tables และการอ้างอิง

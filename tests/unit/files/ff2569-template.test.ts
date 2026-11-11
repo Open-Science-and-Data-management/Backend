@@ -65,4 +65,50 @@ describe("ff2569Template", () => {
     const parsed = ff2569TemplateSchema.safeParse(ff2569Template);
     expect(parsed.success, JSON.stringify(parsed.error?.issues ?? []).slice(0, 400)).toBe(true);
   });
+
+  it("chunkGroups ครบ 3 กลุ่มตาม D4 พร้อม label", () => {
+    const groups = ff2569Template.chunkGroups ?? [];
+    expect(groups.map((g) => g.id)).toEqual(["s0_header", "s1_general", "s2_image"]);
+    expect(groups.map((g) => g.label)).toEqual(["ข้อมูลหัวฟอร์ม", "ข้อมูลทั่วไป", "รูปภาพ"]);
+    const byId = new Map(groups.map((g) => [g.id, g]));
+    expect(byId.get("s0_header")?.fieldIds).toEqual(["fund_type", "fiscal_year", "institution"]);
+    // s1 = ทุก field ใน s1_general ยกเว้น oecd_field, research_team
+    const s1Ids = byId.get("s1_general")?.fieldIds ?? [];
+    expect(s1Ids).toContain("plan_type");
+    expect(s1Ids).toContain("keywords_en");
+    expect(s1Ids).not.toContain("oecd_field");
+    expect(s1Ids).not.toContain("research_team");
+    expect(s1Ids).toEqual(
+      fields.filter((f) => f.sectionId === "s1_general" && f.fieldId !== "oecd_field" && f.fieldId !== "research_team").map((f) => f.fieldId),
+    );
+    expect(byId.get("s2_image")?.fieldIds).toEqual(["research_framework", "framework_description"]);
+  });
+
+  it("chunkGroups: fieldIds มีจริงใน fields และไม่ซ้ำข้าม group", () => {
+    const ids = new Set(fields.map((f) => f.fieldId));
+    const seen = new Map<string, string>();
+    for (const g of ff2569Template.chunkGroups ?? []) {
+      for (const fid of g.fieldIds) {
+        expect(ids.has(fid), `${g.id}: unknown fieldId ${fid}`).toBe(true);
+        expect(seen.has(fid), `field ${fid} ซ้ำข้าม group (${seen.get(fid)}, ${g.id})`).toBe(false);
+        seen.set(fid, g.id);
+      }
+    }
+  });
+
+  it("chunkGroups: schema ปฏิเสธ fieldId ที่ไม่มีจริง และ field ซ้ำข้าม group", () => {
+    const bad = {
+      ...ff2569Template,
+      chunkGroups: [
+        { id: "a", label: "A", fieldIds: ["no_such_field"] },
+        { id: "b", label: "B", fieldIds: ["fund_type"] },
+        { id: "c", label: "C", fieldIds: ["fund_type"] },
+      ],
+    };
+    const parsed = ff2569TemplateSchema.safeParse(bad);
+    expect(parsed.success).toBe(false);
+    const msgs = (parsed.error?.issues ?? []).map((i) => i.message).join("\n");
+    expect(msgs).toContain("no_such_field");
+    expect(msgs).toContain("อยู่ทั้ง chunkGroup b และ c"); // field fund_type ซ้ำข้าม group
+  });
 });

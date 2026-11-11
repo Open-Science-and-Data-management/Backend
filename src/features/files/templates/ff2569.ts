@@ -39,17 +39,45 @@ export const templateFieldSchema = z.object({
 });
 export type TemplateField = z.infer<typeof templateFieldSchema>;
 
+// กลุ่ม chunk (Rev 2, D4) — field ในกลุ่มเดียวกัน render เป็น chunk เดียวตอน chunking (fieldsToChunks)
+export const templateChunkGroupSchema = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9_]*$/),
+  label: z.string().min(1), // ใช้ต่อ heading_path ("… > รูปภาพ")
+  fieldIds: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).min(1),
+});
+export type TemplateChunkGroup = z.infer<typeof templateChunkGroupSchema>;
+
 export const templateSectionSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]*$/),
   title: z.string().min(1), // ชื่อส่วนตามเอกสาร — ใช้ต่อ heading_path ("ส่วนที่ 1 > …")
 });
 export type TemplateSection = z.infer<typeof templateSectionSchema>;
 
-export const ff2569TemplateSchema = z.object({
-  version: z.literal("FF2569"),
-  sections: z.array(templateSectionSchema).min(4),
-  fields: z.array(templateFieldSchema).min(25),
-});
+export const ff2569TemplateSchema = z
+  .object({
+    version: z.literal("FF2569"),
+    sections: z.array(templateSectionSchema).min(4),
+    fields: z.array(templateFieldSchema).min(25),
+    chunkGroups: z.array(templateChunkGroupSchema).min(1).optional(),
+  })
+  .superRefine((tpl, ctx) => {
+    // กติกาข้ามกลุ่ม (Rev 2 R1): fieldIds ต้องมีจริง + 1 field อยู่ได้ 1 กลุ่มเดียว (ห้ามซ้ำข้าม group)
+    const known = new Set(tpl.fields.map((f) => f.fieldId));
+    const claimed = new Map<string, string>(); // fieldId -> groupId
+    for (const g of tpl.chunkGroups ?? []) {
+      for (const fid of g.fieldIds) {
+        if (!known.has(fid)) {
+          ctx.addIssue({ code: "custom", message: `chunkGroup ${g.id}: unknown fieldId ${fid}` });
+          continue;
+        }
+        const prev = claimed.get(fid);
+        if (prev && prev !== g.id) {
+          ctx.addIssue({ code: "custom", message: `field ${fid} อยู่ทั้ง chunkGroup ${prev} และ ${g.id}` });
+        }
+        claimed.set(fid, g.id);
+      }
+    }
+  });
 export type Ff2569Template = z.infer<typeof ff2569TemplateSchema>;
 
 // ── sections (ตาม logical structure ในรายงาน §2) ────────────────────────────
@@ -313,4 +341,11 @@ const fields: TemplateField[] = [
   },
 ];
 
-export const ff2569Template: Ff2569Template = { version: FF2569_TEMPLATE_VERSION, sections, fields };
+// ── chunk groups (Rev 2, D4) — field ในกลุ่ม → chunk เดียวตอน chunking; field นอกกลุ่ม (oecd_field, research_team) ใช้พฤติกรรมเดิม ──
+const chunkGroups: TemplateChunkGroup[] = [
+  { id: "s0_header", label: "ข้อมูลหัวฟอร์ม", fieldIds: ["fund_type", "fiscal_year", "institution"] },
+  { id: "s1_general", label: "ข้อมูลทั่วไป", fieldIds: fields.filter((f) => f.sectionId === "s1_general" && f.fieldId !== "oecd_field" && f.fieldId !== "research_team").map((f) => f.fieldId) },
+  { id: "s2_image", label: "รูปภาพ", fieldIds: ["research_framework", "framework_description"] },
+];
+
+export const ff2569Template: Ff2569Template = { version: FF2569_TEMPLATE_VERSION, sections, fields, chunkGroups };

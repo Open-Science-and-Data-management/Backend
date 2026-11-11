@@ -6,7 +6,7 @@
 # name — ชื่อ service (ยังไม่ถูกใช้ใน logic; ไว้ระบุตัวตนใน log/metrics ภายหลัง)
 # debug — เผื่อไว้เปิดโหมด verbose ในอนาคต (ปัจจุบันไม่มี consumer — ตั้งค่าอะไรก็ไม่มีผล)
 name = "uni-backend"
-debug = false
+debug = true
 
 [auth]                         # src/features/auth/
 _appliesTo = ["src/features/auth/"]
@@ -41,6 +41,8 @@ storagePath = "data/files"
 #   embeddingModel — โมเดล ONNX บน HF (TransformersEmbedding, fp16/CUDA ก่อน fallback CPU q8 — ADR-0028);
 #     เปลี่ยนรุ่น = vector เดิมใช้ไม่ได้ ต้อง re-embed ทุกไฟล์ (dims ต้องตรง schema)
 chunkTargetTokens = 450
+#   chunkTableMaxTokens — cap ขนาด chunk ตาราง (tokens) — เกิน → ตารางแตก part i/n ตัดที่ขอบแถว (Rev 2, D7)
+chunkTableMaxTokens = 4096
 chunkOverlapPercent = 10
 topK = 5
 embeddingModel = "Xenova/multilingual-e5-large" # intfloat/multilingual-e5-large-instruct ไม่มี onnx บน HF — ใช้ quantized เทียบเท่า 1024 dims (ADR-0028)

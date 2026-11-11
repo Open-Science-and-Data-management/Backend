@@ -1,6 +1,8 @@
 # Spec: FF2569 Form-Aware Ingestion (spec:ff2569-form-rag)
 
 > Ground-truth analysis: `docs/research/ff2569-form-rag-structure.md` (structure facts, template quirks, 14 design decisions Q1–Q14 จาก grilling session)
+>
+> **Rev 2 (2026-11-11) — chunk grouping + embedding model**: ดู [§Revision 2](#revision-2--chunk-grouping--embedding-model-2026-11-11) — ตัดสินใจจาก grilling session ครั้งที่ 2; ส่วนอื่นยังอ้างอิง Rev 1 ยกเว้นที่ Rev 2 เขียนทับ
 
 ## Objective
 
@@ -98,3 +100,73 @@ Naming: files `<name>.service.ts` pattern; DB snake_case / TS camelCase / API sn
 1. XML parser ตัวไหน — repo มี dependency ที่ parse XML อยู่แล้วหรือยัง (ตรวจ package.json ตอนเริ่ม S2; jszip เองไม่ parse)
 2. VLM model slug + budget — ใช้ model ใดบน OpenRouter และ caption ตอน ingest หรือ lazy ตอน index ครั้งแรก
 3. รูปแบบ field `fallback` ใน upload response — เพิ่มใน `file_records` เก็บถาวร หรือ response-only (ผมเสนอ: response-only + log, เก็บถาวรเมื่อ FE ต้องการแสดงย้อนหลัง)
+
+## Revision 2 — chunk grouping + embedding model (2026-11-11)
+
+ตัดสินใจจาก grilling session ครั้งที่ 2 (ผู้ใช้ตอบครบทุกข้อ) — เขียนทับ acceptance criteria และกติกาบางข้อของ Rev 1 ตามที่ระบุด้านล่าง
+
+### Objective (Rev 2)
+
+chunk จาก fast path FF2569 แยกกันเกินจำเป็น — ตารางถูกแตก row-chunk ทำให้ context ขาด และ text ในหัวข้อเดียวกันกระจายหลาย chunk ทำให้ `read_proposal` ต้องประกบหลายก้อน อีกทั้ง context 512 ของ e5 ไม่พอกับตารางใหญ่ ผู้ใช้ต้องการให้ text ทั้งหมดของแต่ละหัวข้อ (ตารางรวมอยู่ด้วย) อยู่ใน chunk เดียวกัน และคุณภาพ caption รูปจาก VLM ต้องครอบคลุม OCR/diagram/description
+
+### การตัดสินใจ (จาก grilling — ทั้งหมดผู้ใช้ตอบรับแล้ว)
+
+| # | การตัดสินใจ |
+|---|---|
+| D1 | กลไกรวม chunk = ประกาศ `chunkGroups` ใหม่ใน `templates/ff2569.ts` (single source of truth) — group ระบุ `fieldIds` + `label` |
+| D2 | เลิกแตก row-chunk **ทุกตาราง** — ทั้งตารางอยู่ chunk เดียว (เกิน cap → part i/n); ลบ `table_row` / `parent_chunk_index` จาก `ChunkMeta` และลบ parent-expansion ใน `retrieval.ts` |
+| D3 | meta ของ chunk รวมเก็บ field ครบ → `field_id: string` → `field_ids: string[]` (chunk เดี่ยว = array 1 ตัว) |
+| D4 | Group ที่ประกาศ (heading_path = `section > label`):<br>• s0: `fund_type, fiscal_year, institution` → label `ข้อมูลหัวฟอร์ม`<br>• s1: ทุก field ยกเว้น `oecd_field`, `research_team` → label `ข้อมูลทั่วไป`<br>• s2: `research_framework` + `framework_description` → label `รูปภาพ` |
+| D5 | ตารางไม่ group เพิ่ม — work_plan, research_area, benefit_area, equipment, collaborating_orgs, expected_outputs, output_to_outcome เป็น chunk เดี่ยวต่อ field เพราะเลิก row-chunk แล้วตอบ requirement |
+| D6 | chunk รวมยาวเกิน target → แบ่ง part i/n โดย**ตัดที่ขอบเขต field ก่อน** (ไม่ตัดกลาง field); ทุก part heading_path เดียวกัน → `expandToSections` ประกบกลับได้ |
+| D7 | ตาราง cap ด้วย knob ใหม่ `files.rag.chunkTableMaxTokens = 4096` (Qwen3 รับ 32k แต่คุม precision ของ cosine) — เกิน → part i/n |
+| D8 | s2 ยืดหยุ่นตำแหน่งรูป: รูปใดๆ ใน s2 (ระหว่าง heading ส่วนที่ 2 → ส่วนที่ 3) ที่ไม่ผูก field อื่น → `research_framework.imageRid` |
+| D9 | VLM prompt เดียวครบ 3 เงื่อนไข: มี text → OCR ให้ครบ; diagram → เขียน flow mermaid ถ้าทำได้ ไม่ได้ใช้ ASCII; ไม่มี text → บรรยายสิ่งที่เห็น |
+| D10 | เปลี่ยน embedding model เป็น `Qdrant/Qwen3-Embedding-0.6B-onnx` (context 32k, 1024 dims, Apache-2.0) — ดู ADR-0031; adapter แก้ pooling (last-token) + prefix ตาม model card; chunks เก่า re-embed อัตโนมัติผ่าน `embedding_model` mismatch — **ไม่มี migration** |
+| D11 | chunk เก่าใน DB ไม่ backfill — regenerate ตอนอัปโหลดใหม่ (supersede ลบของเก่าอยู่แล้ว); รูปแบบ meta ใหม่ไม่ทำให้ retrieval เก่า crash (parent-expansion ถูกลบแล้ว) |
+
+### หัวข้อที่ผู้ใช้ระบุ (mapping → template)
+
+| หัวข้อเดิม (แยกกัน) | พฤติกรรมใหม่ |
+|---|---|
+| หัวฟอร์ม > * | รวม 3 field เป็น chunk เดียว `… > ข้อมูลหัวฟอร์ม` |
+| ส่วนที่ 1 > เกือบทั้งหมด | รวมเป็น chunk เดียว `… > ข้อมูลทั่วไป` (ยกเว้น OECD, คณะผู้วิจัย) |
+| ส่วนที่ 1 > สาขา OECD | chunk เดียว ตารางเต็ม (ไม่แตกแถว) |
+| ส่วนที่ 1 > รายละเอียดคณะผู้วิจัย | chunk เดียว ตารางเต็ม |
+| ส่วนที่ 2 > กรอบการวิจัย/พัฒนา (แผนภาพ) + คำอธิบาย (Input–Process–Output) | รวม image caption + text → chunk เดียว `ส่วนที่ 2 ข้อมูลโครงการ > รูปภาพ` (text นี้ไม่มีหัวข้อตายตัวในเอกสารจริง) |
+| ส่วนที่ 3 > work_plan / research_area / benefit_area / equipment / collaborating_orgs | chunk เดียวต่อ field ตารางเต็ม |
+| ส่วนที่ 4 > expected_outputs, output_to_outcome | chunk เดียวต่อ field ตารางเต็ม |
+
+### Acceptance criteria (Rev 2 — เขียนทับข้อ 1, 5 ของ Rev 1)
+
+1. FF2569 fixture: กลุ่ม s0 / s1 / s2 ให้ chunk ตาม D4 ครบ — heading_path ถูกต้อง, `meta.field_ids` ครบทุก field ใน group, ไม่มี row-chunk เหลืออยู่ (`table_row`/`parent_chunk_index` ถูกลบจาก type ด้วย)
+2. ตารางทุกตัว = chunk เดียวเต็มตาราง เว้นแต่ยาวเกิน `chunkTableMaxTokens` → part i/n ที่ heading_path เดียวกัน
+3. `expandToSections` ยังประกบ part i/n ครบและ pack ต่อ heading_path — parent-expansion ถูกลบ (ไม่มี reference ค้าง)
+4. VLM caption: fixture รูปมี text → OCR ครบใน chunk; diagram → มี flow block; ไม่มี text → มีคำบรรยาย
+5. Embedding model ใหม่: upload → embed สำเร็จ (CUDA fp16 ก่อน CPU q8), 1024 dims, chunk เก่า re-embed เมื่อ retrieve
+6. Golden QA คงวัด hit@5/MRR ด้วย heading_path ขึ้นต้นด้วยชื่อ section (ไม่เปลี่ยนวิธีตัดสิน) — ผ่าน threshold เดิม
+
+### Boundaries (Rev 2 — แก้จาก Rev 1)
+
+- **Always**: แก้ spec ก่อน behavior (กฎเดิม); Zod ทุก boundary; heading_path ของ group มาจาก template เท่านั้น ห้าม hardcode ใน parser/chunking
+- **Ask first**: แก้ค่า `chunkTableMaxTokens` / `embeddingModel` ใน `config.toml`, เปลี่ยน label ของ group
+- **Never** (แก้): ~~แตะ `TransformersEmbedding`~~ → เปลี่ยนเป็น *แตะ pooling/prefix ของ adapter โดยไม่ยึด model card ของรุ่นที่ config ระบุ*; กฎ "upload ต้องไม่ fail จาก VLM" และ "embedding ไม่นับ quota" คงเดิม
+
+### Testing (Rev 2 — เขียนทับ assertion เดิมที่ pin พฤติกรรมเก่า)
+
+- `tests/unit/files/fields-to-chunks.test.ts`: ลบ assertion row-chunks (>30 row-chunks/parent linkage), เพิ่ม — group → chunk เดียว + `field_ids` ครบ; ตาราง → chunk เดียวเต็ม; ตารางยาว > cap → part i/n; ตัดที่ขอบ field; heading_path group ถูกต้อง
+- `tests/unit/files/retrieval.test.ts`: ลบ case parent-expansion; คง part i/n merge + dedupe + ลำดับ block
+- `tests/e2e/files.test.ts`: content ของ chunk รูปไม่ขึ้นต้น `"กรอบการวิจัย/พัฒนา (แผนภาพ)"` แล้ว — ให้ assert heading_path = `ส่วนที่ 2 ข้อมูลโครงการ > รูปภาพ` + caption อยู่ใน chunk เดียวกับ text อธิบาย
+- Integration embedding: model ใหม่ 1024 dims + normalize; **ต้องรันด้วย model จริง** (CI fallback CPU q8 เหมือนเดิม)
+
+### Success Criteria (Rev 2)
+
+1. `pnpm lint && pnpm typecheck && pnpm test` เขียวทั้ง 3 tier บน Postgres จริง
+2. อัปโหลด FF2569 fixture ใหม่: ทุกหัวข้อในตาราง §หัวข้อที่ผู้ใช้ระบุ ให้ chunk กลุ่ม/เดี่ยวตามสเปก; `read_proposal` คืน text ครบทั้งหัวข้อใน block เดียว
+3. Embedding: `files.rag.embeddingModel = Qdrant/Qwen3-Embedding-0.6B-onnx`, dims 1024, re-embed เก่าทำงานอัตโนมัติ
+4. Golden QA hit@5 ไม่ต่ำกว่า threshold เดิม (ถ้าต่ำลง รายงานก่อนปรับ threshold)
+5. ไม่มี dead code เหลือ: `table_row`, `parent_chunk_index`, parent-expansion, e5 prefix/pooling logic
+
+### Open Questions (Rev 2)
+
+1. ความเสี่ยงคุณภาพไทย: Qwen3-0.6B มี Thai-MTEB 68.39 (≈ e5-large-instruct 67.69) แต่ไม่มีคะแนน SEA-BED — ยอมรับแลก context 32k แล้ว ให้ golden-qa เป็นตัวตัดสินจริง (ผู้ใช้รับทราบแล้วใน grilling)
