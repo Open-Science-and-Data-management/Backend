@@ -52,7 +52,7 @@
 
 ## Phase 3: Wiring & Retrieval
 
-- [ ] Task 6: upload fast path + fallback flag
+- [x] Task 6: upload fast path + fallback flag
   - Acceptance: `files.service.ts` สาขา docx: schema match → form chunks (`meta` ครบ) / match ล้ม → generic `blocksToChunks` เดิม + warn log; response เพิ่ม `form_parsed: boolean` (response-only); e2e: FF fixture → `form_parsed: true`, `proposal-sample.docx` → `form_parsed: false` + chunks พฤติกรรมเดิม (regression)
   - Verify: `pnpm test -- tests/integration/files-parse.test.ts` + `pnpm test -- tests/e2e/files.test.ts`
   - Files: `src/features/files/files.service.ts`, `src/shared/config/index.ts` + `config.toml` (knob `[files.rag] template`), `src/shared/contracts/files.ts` (หรือไฟล์ contract ที่ FileResponse อยู่), `docs/api/files.md`, `tests/e2e/files.test.ts`

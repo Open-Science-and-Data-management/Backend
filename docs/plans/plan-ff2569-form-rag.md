@@ -36,7 +36,7 @@
 - [x] `pnpm db:migrate` สำเร็จ + `tests/integration/schema.test.ts` เขียว + `tests/unit/contracts/contracts.test.ts` เขียว
 
 ### Phase 3: Wiring & Retrieval
-- [ ] Task 6: upload fast path + fallback flag (`files.service.ts`, config knob, `docs/api/files.md`, e2e)
+- [x] Task 6: upload fast path + fallback flag (`files.service.ts`, config knob, `docs/api/files.md`, e2e)
 - [ ] Task 7: VLM caption best-effort (config-gated, mock client ใน test)
 - [ ] Task 8: parent-expansion helper + `read_proposal` ใช้ section เต็ม
 - [ ] Task 9: golden QA integration suite (hit@5/MRR threshold)
