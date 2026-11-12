@@ -34,15 +34,15 @@ describe("draft-integrity drift guard", () => {
     const allKeys = src("../../src/shared/domain-engine/diff-draft.ts")
       .match(/export interface FieldChange \{([\s\S]*?)\n\}/)?.[1]
       ?.match(/^\s{2}\w+\??\s*:/gm)?.map((line) => line.trim().split(/[?:]/)[0]);
-    expect(allKeys, "interface FieldChange ไม่เจอใน diff-draft.ts").toBeTruthy();
-    for (const key of FIELD_CHANGE_KEYS) expect(allKeys!).toContain(key);
+    if (allKeys === undefined) throw new Error("interface FieldChange ไม่เจอใน diff-draft.ts");
+    for (const key of FIELD_CHANGE_KEYS) expect(allKeys).toContain(key);
   });
 
   it("D4 — APPROVER_KEYS ตรงกับรูป approver ที่ dmps.service.ts decide เขียน", () => {
     const literal = src("../../src/features/dmps/dmps.service.ts")
       .match(/const approver = \{([\s\S]*?)\};/)?.[1];
-    expect(literal, "approver literal ไม่เจอใน dmps.service.ts").toBeTruthy();
-    expect(sorted(literalKeys(literal!))).toEqual(sorted(APPROVER_KEYS));
+    if (literal === undefined) throw new Error("approver literal ไม่เจอใน dmps.service.ts");
+    expect(sorted(literalKeys(literal))).toEqual(sorted(APPROVER_KEYS));
   });
 
   it("D5 — content key-set ต่อ kind ตรงกับ literal ที่ ai.service.ts เขียน", () => {
@@ -54,8 +54,8 @@ describe("draft-integrity drift guard", () => {
     }
     // user — chat ให้ {text,section} / action อื่นให้ {action,direction} (ternary เดียว)
     const userTernary = source.match(/content: action === "chat" \? (\{[^{}]*\}) : (\{[^{}]*\})/);
-    expect(userTernary, "user content ternary ไม่เจอใน ai.service.ts").toBeTruthy();
-    shapes.user.push(literalKeys(userTernary![1]), literalKeys(userTernary![2]));
+    if (userTernary === null) throw new Error("user content ternary ไม่เจอใน ai.service.ts");
+    shapes.user.push(literalKeys(userTernary[1]), literalKeys(userTernary[2]));
 
     const allowed = {
       user: USER_CONTENT_KEYS.map((ks) => sorted(ks)),
@@ -68,7 +68,7 @@ describe("draft-integrity drift guard", () => {
         // ทุก literal ต้องอยู่ใน key-set ที่ SQL อนุญาต (key ⊆ ชุดใดชุดหนึ่ง)
         expect(
           allowed[kind].some((ks) => shape.every((k) => ks.includes(k))),
-          `content ของ "${kind}" มี key นอกชุด constraint: [${shape}]`,
+          `content ของ "${kind}" มี key นอกชุด constraint: [${shape.join(", ")}]`,
         ).toBe(true);
       }
     }
