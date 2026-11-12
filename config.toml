@@ -35,9 +35,9 @@ _appliesTo = ["src/features/ai/"]
 mock = false                        # true = MockAiClient, ไม่ใช้ OPENROUTER_KEY (TC-6)
 
 [ai.models]                         # slug "vendor/model" — ต้อง tool calling; action ไม่มีในตารางใช้ default
-default = "google/gemini-2.5-flash"
-analyze_proposal = "google/gemini-2.5-flash" # อ่าน proposal เต็มเล่ม แพงสุด — คุ้มใช้รุ่นแข็ง
-chat = "google/gemini-2.5-flash"
+default = "deepseek/deepseek-v4.1-flash-1017"
+analyze_proposal = "deepseek/deepseek-v4.1-flash-1017" # อ่าน proposal เต็มเล่ม แพงสุด — คุ้มใช้รุ่นแข็ง
+chat = "deepseek/deepseek-v4.1-flash-1017"
 
 [notifications]                     # src/features/notifications/
 _appliesTo = ["src/features/notifications/"]

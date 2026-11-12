@@ -11,6 +11,7 @@ S4.1 `AiClient` port + OpenRouter adapter (anti-corruption: แปล wire forma
 
 ## Interfaces (boundary)
 - `POST /ai/analyze-proposal` (ผูก proposal ให้โครงการ — เติมช่อง nullable จาก projects-files), `POST /dmps/{scope}/ai/{action}` (SSE; scope = dmp_id | `unscoped`), `GET /dmps/{scope}/ai-thread`, `PUT /dmps/{scope}/ai-thread/{entry}`, `POST /dmps/{scope}/ai-thread/clear|adopt`, `GET /ai/quota`
+- เงื่อนไข per-action (server บังคับก่อนเริ่ม stream): `generate-tasks` และ `checklist` เรียกใต้แผนสถานะ **approved เท่านั้น** (committee approve หรือ independent finalize) — แผน draft/pending ตอบ 409 `plan_not_approved`; `suggest`/`regenerate-field` ใช้ได้ทุกสถานะ (ช่วยแก้ working draft/minor edits ต่อได้แม้แผนมีผลแล้ว); `chat` เป็น action เดียวที่อยู่ใต้ `unscoped` ได้
 - SSE events: `status`/`tool` (ระหว่างทาง, consume ไม่บังคับ) → `delta` (ข้อความ) → `proposal` (structured) → `done|error` (terminal) — shapes จาก `shared/contracts/`, event ที่ client ไม่รู้จักต้องเมินได้
 - โควตา: pre-flight เป็น hint (ไม่ปฏิเสธ run เดียวที่ล้น); reconcile ตอนจบ = output + uncached input (cached นับ 10%), คิดทุก call รวม fail/abort; reset รายเดือน (`quota_resets_at`)
 - `Idempotency-Key` บังคับทุก AI action — replay ได้ 24 ชม. ไม่โดนโควตาซ้ำ (`idempotency_keys` table)

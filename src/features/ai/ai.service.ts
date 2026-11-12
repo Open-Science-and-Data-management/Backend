@@ -28,6 +28,15 @@ import * as filesRepo from "@/features/files/files.repository.js";
 import { AI_ACTIONS, type AiAction } from "./actions.js";
 import { prompts } from "./prompts/prompts.js";
 
+/** action ที่ต้องการแผนผ่านการอนุมัติแล้ว (committee approve / independent finalize) — SPEC-ai */
+const NEEDS_APPROVED_PLAN: Record<AiAction, boolean> = {
+  chat: false,
+  suggest: false,
+  "regenerate-field": false,
+  "generate-tasks": true,
+  checklist: true,
+};
+
 const updateEntrySchema = z.object({
   status: z.enum(["accepted", "rejected", "stale"]),
   stale_reason: z.string().optional(),
@@ -110,7 +119,12 @@ export class AiService {
     const action = this.assertAction(params.action);
     const scoped = params.scope !== "unscoped";
     if (!scoped && action !== "chat") throw new ApiError(400, "field_invalid", `action "${action}" ต้องอยู่ใต้ dmp_id เท่านั้น`, "/scope");
-    const dmpId = scoped ? (await this.findOwnedDmp(claims, params.scope)).dmpId : null;
+    const dmp = scoped ? await this.findOwnedDmp(claims, params.scope) : null;
+    const dmpId = dmp?.dmpId ?? null;
+    // เงื่อนไข per-action (SPEC-ai) — generate-tasks/checklist ต้องการแผนที่ committee อนุมัติแล้ว
+    if (dmp !== null && NEEDS_APPROVED_PLAN[action] && dmp.status !== "approved") {
+      throw new ApiError(409, "plan_not_approved", "generate-tasks and checklist need a committee-approved plan");
+    }
     const body = this.parseBody(action, params.body);
 
     const { idem, snapshot } = await this.idempotencyGate(claims, idempotencyKey, action);
@@ -293,11 +307,11 @@ export class AiService {
   // ── internals ────────────────────────────────────────────────────────────
 
   /** researcher + เจ้าของเท่านั้น — ไม่ใช่ → 404 ซ่อนการมีอยู่ (FE ai.md: author-only) */
-  private async findOwnedDmp(claims: AccessClaims, dmpId: string): Promise<{ dmpId: string }> {
+  private async findOwnedDmp(claims: AccessClaims, dmpId: string): Promise<{ dmpId: string; status: string }> {
     if (claims.role !== "researcher") throw new ApiError(403, "not_a_researcher", "AI endpoints สำหรับเจ้าของแผนเท่านั้น");
     const row = (await dmpsRepo.findById(this.db, dmpId)).at(0);
     if (row === undefined || row.dmp.createdBy !== claims.sub) throw new ApiError(404, "dmp_not_found", "No DMP with that id");
-    return { dmpId: row.dmp.dmpId };
+    return { dmpId: row.dmp.dmpId, status: row.dmp.status };
   }
 
   private assertAction(action: string): AiAction {

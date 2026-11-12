@@ -5,6 +5,7 @@
 ข้อจำกัดสำคัญ:
 
 - เฉพาะ role `researcher` ที่เป็นเจ้าของแผน (`created_by` = ผู้เรียก) — ไม่ใช่เจ้าของตอบ 404 `dmp_not_found` เพื่อซ่อนการมีอยู่, ไม่ใช่ researcher ตอบ 403 `not_a_researcher`
+- เงื่อนไข per-action (ตรวจก่อนเริ่ม stream): `generate-tasks` และ `checklist` ใช้ได้ใต้แผนสถานะ `approved` เท่านั้น (committee approve หรือ independent finalize) — แผน `draft`/`pending` ตอบ 409 `plan_not_approved`; `suggest`/`regenerate-field` ใช้ได้ทุกสถานะของแผน (ช่วยแก้ working draft และ minor edits หลังแผนมีผล)
 - ทุก action streaming (รวม `analyze-proposal`) **ต้องส่ง header `Idempotency-Key`** — ขาดตอบ 400 `field_invalid`; key เดิมที่ run จบแล้ว replay snapshot เดิมโดยไม่หักโควตาซ้ำ (24 ชม.), key ซ้ำขณะ run ยังบินตอบ 409
 - `scope` ใน path เป็น `dmp_id` หรือ `unscoped` (chat ในโหมดอิสระ) — action อื่นที่ไม่ใช่ `chat` ใต้ `unscoped` ตอบ 400 `field_invalid`
 
@@ -241,13 +242,13 @@ curl <base URL>/dmps/018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90/ai/chat \
 - **scope** (string, required) ใน URL path — `dmp_id` หรือ `unscoped`
 - **action** (string, required) ใน URL path — ตัวใดตัวหนึ่ง อื่น ๆ ตอบ 404 `action_not_found`
 
-  | Value              | Description                                                     |
-  | ------------------ | --------------------------------------------------------------- |
-  | `chat`             | สนทนาเรื่องแผน (action เดียวที่อยู่ใต้ `unscoped` ได้)            |
-  | `suggest`          | ข้อเสนอแนะต่อแผน                                                 |
-  | `regenerate-field` | สร้างฟิลด์ใน draft ใหม่                                           |
-  | `generate-tasks`   | เสนองาน lifecycle จากแผน                                          |
-  | `checklist`        | เช็คความครบถ้วนของแผน                                             |
+  | Value              | Description                                                     | เงื่อนไขของแผน                                              |
+  | ------------------ | --------------------------------------------------------------- | ------------------------------------------------------------ |
+  | `chat`             | สนทนาเรื่องแผน (action เดียวที่อยู่ใต้ `unscoped` ได้)            | ไม่มี (unscoped หรือใต้แผนก็ได้, ทุกสถานะ)                    |
+  | `suggest`          | ข้อเสนอแนะต่อแผน                                                 | ทุกสถานะ — draft/pending/approved                            |
+  | `regenerate-field` | สร้างฟิลด์ใน draft ใหม่                                           | ทุกสถานะ — draft/pending/approved                            |
+  | `generate-tasks`   | เสนองาน lifecycle จากแผน                                          | `approved` เท่านั้น (draft/pending → 409 `plan_not_approved`) |
+  | `checklist`        | เช็คความครบถ้วนของแผน                                             | `approved` เท่านั้น (draft/pending → 409 `plan_not_approved`) |
 
 - **message** (string, required เมื่อ action `chat`) ข้อความของผู้ใช้ (min length 1)
 - **section** (string, optional เมื่อ action `chat`) section ของแผนที่สนทนาอยู่
@@ -291,7 +292,7 @@ SSE stream จบด้วย terminal event เดียว เมื่อส�
 | 401    | ไม่ได้ส่งหรือ access token ไม่ถูกต้อง                                                        |
 | 403    | ผู้เรียกไม่ใช่ `researcher` (code `not_a_researcher`)                                        |
 | 404    | ไม่มีแผนนี้หรือไม่ใช่ของผู้เรียก (code `dmp_not_found`) หรือไม่มี action นี้ (code `action_not_found`) |
-| 409    | key ซ้ำขณะ run แรกยังไม่จบ                                                                   |
+| 409    | key ซ้ำขณะ run แรกยังไม่จบ หรือ `generate-tasks`/`checklist` เรียกบนแผนที่ยังไม่ approved (code `plan_not_approved`) |
 | 429    | โควตาเดือนนี้ใช้ครบแล้ว (code `quota_exceeded`, `resets_at` แนบใน error)                      |
 
 ภายใน stream: `error` event ตามตารางในหัวข้อ [The SSE event stream](#the-sse-event-stream)

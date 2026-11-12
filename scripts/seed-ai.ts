@@ -1,7 +1,9 @@
 // seed-ai — เตรียมชุดข้อมูลเดโมให้มนุษย์ทดสอบ AI API (SPEC-ai) ผ่าน dev server ที่รันอยู่
 // ใช้: `pnpm dev` ค้างไว้ แล้ว `pnpm seed:ai` (BASE_URL ปรับได้, default http://localhost:3000)
 // ยิง HTTP เท่านั้น — ไม่แตะ DB ตรง; รันซ้ำได้: user/project/proposal/แผน อันไหนมีอยู่แล้วใช้ของเดิม
-// ขั้นตอน: register/login → project → upload FF2569 (parse+embed sync ใน response) → แผนเปล่า → พิมพ์ curl cheat sheet
+// ขั้นตอน: register/login (researcher + committee) → project → upload FF2569 (parse+embed sync ใน response)
+//          → แผนร่าง (chat/suggest/regenerate-field) → แผนที่ committee อนุมัติแล้ว (generate-tasks/checklist)
+//          → พิมพ์ curl cheat sheet พร้อมเงื่อนไขของแต่ละ action
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../src/shared/config/index.js";
@@ -18,17 +20,60 @@ const DEMO = {
   organization: "Uni",
 } as const;
 
+// บัญชีคณะกรรมการเดโม — สมัครเองได้เฉพาะ researcher (OC-1) จึงต้องเลื่อน role ใน DB ครั้งเดียว
+// (script จะพิมพ์คำสั่ง psql ให้เมื่อยังไม่ได้เลื่อน) ก่อนจะ approve แผนเพื่อปลดล็อก generate-tasks/checklist ได้
+const COMMITTEE = {
+  username: "demo-committee",
+  email: "demo.committee@example.edu",
+  password: "demo-passw0rd",
+  account_type: "citizen",
+  name: "Demo",
+  surname: "Committee",
+} as const;
+
 const PROJECT_NAME = "[DEMO] ข้อเสนอโครงการ FF2569";
 const PROJECT_DESC = "โครงการเดโมสำหรับทดสอบ AI API — มี proposal FF2569 ที่ parse + embed แล้ว";
+const PLAN_DRAFT_TITLE = "[DEMO] แผนร่าง (chat/suggest/regenerate-field)";
+const PLAN_APPROVED_TITLE = "[DEMO] แผนอนุมัติแล้ว (generate-tasks/checklist)";
 const DOCX_PATH = fileURLToPath(new URL("../docs/research/ข้อเสนอโครงการ FF2569.docx", import.meta.url));
 const DOCX_NAME = "ข้อเสนอโครงการ FF2569.docx";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/** draft ครบตาม validateDraft (ตรง fixture ใน tests/e2e) — ใช้ยื่นแผนเดโมเข้าคณะกรรมการ */
+const APPROVAL_DRAFT = {
+  title: PLAN_APPROVED_TITLE,
+  description: "แผนเดโมผ่าน validateDraft — ยื่นเพื่อให้ committee approve แล้วปลดล็อก generate-tasks/checklist",
+  language: "tha",
+  begin_date: "2026-11-01",
+  end_date: "2028-10-31",
+  ethical_issues_exist: false,
+  contributor: [{ name: DEMO.name, surname: DEMO.surname, role: "Principal investigator", is_contact: true, email: DEMO.email }],
+  cost: [],
+  dataset: [
+    {
+      dataset_id: "ds-demo-ff2569",
+      type: "raw",
+      title: "ข้อมูลจากข้อเสนอโครงการ FF2569",
+      access: "open",
+      personal_data: "no",
+      sensitive_data: "no",
+      protection_level: "other",
+      security_classification_level: "public",
+      keyword: [],
+      domain: "generic",
+      domain_metadata: {},
+      preservation: { doi_requested: false },
+      distribution: [],
+    },
+  ],
+  schema_version: "v3.0",
+} as const;
 
 // ── response shapes ที่ script แตะ (แค่ field ที่ใช้) ─────────────────────────
 interface Session {
   access_token: string;
   expires_at: string;
-  user: { user_id: string; username: string };
+  user: { user_id: string; username: string; role: string };
 }
 interface Project {
   project_id: string;
@@ -41,6 +86,7 @@ interface FileRec {
 interface DmpRec {
   dmp_id: string;
   title: string;
+  status: string;
 }
 
 /** HTTP error จากฝั่ง server — แยกรูปแบบ envelope {error:{code,message}} ออกให้ caller อ่าน status */
@@ -76,6 +122,12 @@ function listOf(v: unknown): unknown[] {
   const data = pick(v, "data");
   if (!Array.isArray(data)) throw new Error("response ผิดรูป: data ไม่ใช่ array");
   return data;
+}
+
+/** array ดิบ (เช่น versions ใน GET /dmps/:id) — ไม่ใช่ envelope เหมือน listOf */
+function arrayOf(v: unknown): unknown[] {
+  if (!Array.isArray(v)) throw new Error("response ผิดรูป: คาด array แต่ได้ " + typeof v);
+  return v;
 }
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
@@ -151,7 +203,7 @@ function toSession(v: unknown): Session {
   return {
     access_token: str(v, "access_token"),
     expires_at: str(v, "expires_at"),
-    user: { user_id: str(user, "user_id"), username: str(user, "username") },
+    user: { user_id: str(user, "user_id"), username: str(user, "username"), role: str(user, "role") },
   };
 }
 
@@ -220,18 +272,131 @@ async function ensureProposal(token: string, projectId: string): Promise<FileRec
   return file;
 }
 
-/** แผนเปล่าสำหรับ scoped action (chat/suggest/...) — analyze-proposal จะ mint แผนใหม่ของตัวเองตอนรัน */
-async function ensureDmp(token: string, projectId: string): Promise<DmpRec> {
+/** หาแผนใต้โครงการด้วยชื่อคงที่ของชุดเดโม — ไม่แตะแผนของคนอื่น */
+async function findDmpByTitle(token: string, projectId: string, title: string): Promise<DmpRec | undefined> {
   const query = new URLSearchParams({ project_id: projectId, limit: "100" });
   const list = await api("GET", `/dmps?${String(query)}`, { token });
-  const existing = listOf(list).at(0) as DmpRec | undefined;
+  return listOf(list)
+    .map((d) => d as DmpRec)
+    .find((d) => d.title === title);
+}
+
+/** แผนร่างสำหรับ scoped action (chat/suggest/regenerate-field) — สถานะใดก็ใช้ได้ จึงไม่ต้องยื่นอนุมัติ */
+async function ensureDraftDmp(token: string, projectId: string): Promise<DmpRec> {
+  const existing = await findDmpByTitle(token, projectId, PLAN_DRAFT_TITLE);
   if (existing !== undefined) {
-    console.log("✓ แผน: มีอยู่แล้วใต้โครงการ — ใช้ของเดิม");
+    console.log(`✓ แผนร่าง: มีอยู่แล้ว — ใช้ของเดิม`);
     return existing;
   }
-  const created = await api("POST", "/dmps", { token, body: { project_id: projectId } });
-  console.log("✓ แผน: สร้างแผนเปล่าใหม่ (ไว้ทดสอบ scoped action ทันที)");
-  return { dmp_id: str(created, "dmp_id"), title: str(created, "title") };
+  const created = await api("POST", "/dmps", { token, body: { project_id: projectId, title: PLAN_DRAFT_TITLE } });
+  const dmp: DmpRec = { dmp_id: str(created, "dmp_id"), title: PLAN_DRAFT_TITLE, status: str(created, "status") };
+  // POST /dmps ไม่เก็บ title จาก body — ชื่อแผนมาจาก draft.title เท่านั้น จึงต้อง PUT draft ตั้งชื่อไว้ให้รันซ้ำจับด้วยชื่อ
+  await api("PUT", `/dmps/${dmp.dmp_id}/draft`, { token, body: { draft_revision: 0, draft: { title: PLAN_DRAFT_TITLE } } });
+  console.log(`✓ แผนร่าง: สร้างใหม่ (ไว้ทดสอบ chat/suggest/regenerate-field ทันที)`);
+  return dmp;
+}
+
+function warnCommitteePromotion(): void {
+  console.warn(
+    [
+      `⚠ บัญชี ${COMMITTEE.username} ยังไม่ใช่ committee — approve แผนให้ไม่ได้ (สมัครเองได้เฉพาะ researcher — OC-1)`,
+      `  เลื่อน role ด้วยคำสั่งนี้ครั้งเดียว แล้วรัน \`pnpm seed:ai\` ซ้ำ:`,
+      `  docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d uni -c "update users set role='committee' where username='${COMMITTEE.username}'"`,
+      `  แผนเดโมค้างสถานะ pending — generate-tasks/checklist ยังโดน 409 plan_not_approved จนกว่าจะ approve`,
+    ].join("\n"),
+  );
+}
+
+/** session ของคณะกรรมการเดโม — ยังไม่มีบัญชี (401) ค่อย register (ได้ role researcher รอเลื่อน); ยังไม่ใช่ committee → คืน null */
+async function ensureCommitteeSession(): Promise<Session | null> {
+  let session: Session;
+  try {
+    session = toSession(await api("POST", "/auth/sessions", { body: { username: COMMITTEE.username, password: COMMITTEE.password } }));
+  } catch (cause) {
+    if (!(cause instanceof SeedHttpError) || cause.status !== 401) throw cause;
+    const registration = { ...COMMITTEE, confirm_password: COMMITTEE.password };
+    try {
+      session = toSession(await api("POST", "/users", { body: registration }));
+    } catch (registerCause) {
+      if (registerCause instanceof SeedHttpError && registerCause.status === 409) {
+        throw new Error(`บัญชี ${COMMITTEE.username} มีอยู่แล้วแต่ sign-in ไม่ผ่าน — รหัสผ่านไม่ตรงที่ script ใช้`);
+      }
+      throw registerCause;
+    }
+    console.log(`✓ user: ${COMMITTEE.username} — สมัครใหม่ (role researcher — รอเลื่อนเป็น committee)`);
+    return null;
+  }
+  console.log(`✓ user: ${COMMITTEE.username} — ใช้บัญชีเดิม (role ${session.user.role})`);
+  if (session.user.role !== "committee" && session.user.role !== "chief") {
+    warnCommitteePromotion();
+    return null;
+  }
+  return session;
+}
+
+/**
+ * แผนที่ committee อนุมัติแล้ว — เงื่อนไขของ generate-tasks/checklist (ยังไม่อนุมัติ → 409 plan_not_approved)
+ * ทางเดิน: สร้างแผน → เขียน draft ครบตาม validateDraft → submit (หรือ revisions หลังถูก reject)
+ * → approve ด้วยบัญชี committee; approve ไม่ได้ (ยังไม่ได้เลื่อน role) → เตือนแล้วปล่อย pending
+ */
+async function ensureApprovedDmp(token: string, projectId: string, committee: Session | null): Promise<DmpRec> {
+  let dmp = await findDmpByTitle(token, projectId, PLAN_APPROVED_TITLE);
+  if (dmp === undefined) {
+    const created = await api("POST", "/dmps", { token, body: { project_id: projectId, title: PLAN_APPROVED_TITLE } });
+    dmp = { dmp_id: str(created, "dmp_id"), title: str(created, "title"), status: str(created, "status") };
+    console.log(`✓ แผนอนุมัติ: สร้างใหม่`);
+  }
+  if (dmp.status === "approved") {
+    console.log(`✓ แผนอนุมัติ: approved อยู่แล้ว — ข้ามขั้น submit/approve`);
+    return dmp;
+  }
+  if (dmp.status === "draft") {
+    const detail = await api("GET", `/dmps/${dmp.dmp_id}?include=draft,versions`, { token });
+    const revision = num(detail, "draft_revision");
+    await api("PUT", `/dmps/${dmp.dmp_id}/draft`, { token, body: { draft_revision: revision, draft: APPROVAL_DRAFT } });
+    // submit ได้ครั้งแรกครั้งเดียว — แผนที่เคยถูก reject ยื่นซ้ำผ่าน /revisions
+    const hadVersions = arrayOf(pick(detail, "versions")).length > 0;
+    const submitted = hadVersions
+      ? await api("POST", `/dmps/${dmp.dmp_id}/revisions`, { token, body: { draft_revision: revision + 1 } })
+      : await api("POST", `/dmps/${dmp.dmp_id}/submit`, { token, body: { draft_revision: revision + 1 } });
+    const number = hadVersions ? num(submitted, "number") : 1;
+    console.log(`✓ แผนอนุมัติ: เขียน draft ครบ + ส่งเข้าการพิจารณา (version ${String(number)} pending)`);
+    dmp = { ...dmp, status: "pending" };
+    if (committee !== null) dmp.status = await approveVersion(committee, dmp, number);
+    else console.warn(`⚠ ข้าม approve — แผนค้าง pending (ดูคำเตือนบัญชี committee ด้านบน)`);
+    return dmp;
+  }
+  // pending ค้างจากรอบก่อน — หาเลข version ที่รอพิจารณาแล้ว approve ต่อ
+  const detail = await api("GET", `/dmps/${dmp.dmp_id}?include=versions`, { token });
+  const pending = arrayOf(pick(detail, "versions"))
+    .map((v) => v as { number: number; status: string })
+    .find((v) => v.status === "pending");
+  if (pending === undefined) {
+    console.warn(`⚠ แผนอนุมัติ: สถานะ ${dmp.status} แต่ไม่มี version pending — ตรวจแผนด้วยตัวเองต่อ`);
+    return dmp;
+  }
+  if (committee !== null) dmp.status = await approveVersion(committee, dmp, pending.number);
+  else console.warn(`⚠ ข้าม approve — แผนค้าง pending (ดูคำเตือนบัญชี committee ด้านบน)`);
+  return dmp;
+}
+
+/** approve เวอร์ชันที่รอพิจารณา — คืนสถานะใหม่; ไม่มีสิทธิ์/ตัดสินไปแล้ว → เตือนแล้วคง pending */
+async function approveVersion(committee: Session, dmp: DmpRec, number: number): Promise<string> {
+  try {
+    await api("POST", `/dmps/${dmp.dmp_id}/versions/${String(number)}/approve`, {
+      token: committee.access_token,
+      body: { position: "Chair", note: "DEMO — seed approve" },
+    });
+  } catch (cause) {
+    if (cause instanceof SeedHttpError && (cause.status === 403 || cause.status === 409)) {
+      console.warn(`⚠ approve version ${String(number)} ไม่สำเร็จ (${cause.code}) — แผนยังไม่ approved`);
+      warnCommitteePromotion();
+      return "pending";
+    }
+    throw cause;
+  }
+  console.log(`✓ แผนอนุมัติ: committee approve version ${String(number)} แล้ว — พร้อมทดสอบ generate-tasks/checklist`);
+  return "approved";
 }
 
 async function printQuota(token: string): Promise<void> {
@@ -242,7 +407,7 @@ async function printQuota(token: string): Promise<void> {
 }
 
 // ── cheat sheet ──────────────────────────────────────────────────────────────
-function printCheatSheet(session: Session, project: Project, file: FileRec, dmp: DmpRec): void {
+function printCheatSheet(session: Session, project: Project, file: FileRec, dmp: DmpRec, approved: DmpRec): void {
   const analyzeBody = JSON.stringify({ project_id: project.project_id, file_id: file.file_id });
   const base = BASE_URL;
   console.log(
@@ -254,6 +419,13 @@ function printCheatSheet(session: Session, project: Project, file: FileRec, dmp:
       `# token อายุ 15 นาที — หมดแล้ว sign-in ใหม่ด้วย ${DEMO.username} / ${DEMO.password}:`,
       `#   curl -s $API/auth/sessions -H 'Content-Type: application/json' -d '{"username":"${DEMO.username}","password":"${DEMO.password}"}'`,
       "",
+      "─── เงื่อนไขของ AI action (server บังคับก่อนเริ่ม stream — SPEC-ai) ──",
+      "  chat               unscoped หรือใต้ dmp_id ก็ได้ — แผนทุกสถานะ",
+      "  suggest            ต้องใต้ dmp_id — แผนทุกสถานะ",
+      "  regenerate-field   ต้องใต้ dmp_id — แผนทุกสถานะ",
+      "  generate-tasks     ต้องใต้ dmp_id — เฉพาะแผน approved (ยังไม่อนุมัติ → 409 plan_not_approved)",
+      "  checklist          เช่นเดียวกับ generate-tasks",
+      "",
       "# 1) โควตาโทเค็น",
       'curl -s $API/ai/quota -H "Authorization: Bearer $TOKEN"',
       "",
@@ -263,21 +435,45 @@ function printCheatSheet(session: Session, project: Project, file: FileRec, dmp:
       '  -H "Content-Type: application/json" \\',
       `  -d '${analyzeBody}'`,
       "",
-      "# 3) chat บนแผน (SSE)",
+      "# 3) chat บนแผนร่าง (SSE)",
       `curl -N $API/dmps/${dmp.dmp_id}/ai/chat \\`,
       '  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: demo-chat-1" \\',
       '  -H "Content-Type: application/json" \\',
       `  -d '{"message":"สรุป proposal นี้สั้น ๆ ว่าศึกษาอะไร มี dataset อะไร"}'`,
       "",
-      "# 4) ประวัติ thread (เอา entry_id ไปตัดสิน proposal ในข้อ 5)",
+      "# 4) suggest — ใต้แผนร่าง (ทุกสถานะใช้ได้)",
+      `curl -N $API/dmps/${dmp.dmp_id}/ai/suggest \\`,
+      '  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: demo-suggest-1" \\',
+      '  -H "Content-Type: application/json" \\',
+      `  -d '{"direction":"เสนอวิธีเก็บรักษา dataset ชุดหลักให้ปลอดภัย"}'`,
+      "",
+      "# 5) regenerate-field — ใต้แผนร่าง (ทุกสถานะใช้ได้); path = JSON pointer ลง draft",
+      `curl -N $API/dmps/${dmp.dmp_id}/ai/regenerate-field \\`,
+      '  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: demo-regen-1" \\',
+      '  -H "Content-Type: application/json" \\',
+      `  -d '{"path":"/dataset/0/title","direction":"เขียนชื่อ dataset ใหม่ให้สื่อความหมายขึ้น"}'`,
+      "",
+      "# 6) generate-tasks — ใต้แผนที่ committee อนุมัติแล้วเท่านั้น (แผนร่าง/pending → 409 plan_not_approved)",
+      `curl -N $API/dmps/${approved.dmp_id}/ai/generate-tasks \\`,
+      '  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: demo-tasks-1" \\',
+      '  -H "Content-Type: application/json" \\',
+      `  -d '{"direction":"ร่าง lifecycle tasks ชุดแรกจากแผน"}'`,
+      "",
+      "# 7) checklist — เงื่อนไขเดียวกับ generate-tasks; บริบท task ส่งทาง body",
+      `curl -N $API/dmps/${approved.dmp_id}/ai/checklist \\`,
+      '  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: demo-checklist-1" \\',
+      '  -H "Content-Type: application/json" \\',
+      `  -d '{"task_title":"เก็บข้อมูลภาคสนาม","lifecycle_stage":"collect","dataset_title":"ข้อมูลจากข้อเสนอโครงการ FF2569"}'`,
+      "",
+      "# 8) ประวัติ thread (เอา entry_id ไปตัดสิน proposal ในข้อ 9)",
       `curl -s "$API/dmps/${dmp.dmp_id}/ai-thread?limit=20" -H "Authorization: Bearer $TOKEN"`,
       "",
-      "# 5) ตัดสิน proposal — <entry_id> จากข้อ 4 (kind=assistant ที่ content.proposal ไม่ null)",
+      "# 9) ตัดสิน proposal — <entry_id> จากข้อ 8 (kind=assistant ที่ content.proposal ไม่ null)",
       `curl -X PUT $API/dmps/${dmp.dmp_id}/ai-thread/<entry_id> \\`,
       '  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\',
       '  -d \'{"status":"accepted"}\'',
       "",
-      "# 6) ซ่อนประวัติที่ยังไม่ถูกตัดสิน",
+      "# 10) ซ่อนประวัติที่ยังไม่ถูกตัดสิน",
       `curl -X POST $API/dmps/${dmp.dmp_id}/ai-thread/clear -H "Authorization: Bearer $TOKEN"`,
       "──────────────────────────────────────────────────────────────",
       "",
@@ -291,14 +487,16 @@ try {
   await probeServer();
   const session = await ensureSession();
   const token = session.access_token;
+  const committee = await ensureCommitteeSession();
   const project = await ensureProject(token);
   const file = await ensureProposal(token, project.project_id);
-  const dmp = await ensureDmp(token, project.project_id);
+  const dmp = await ensureDraftDmp(token, project.project_id);
+  const approved = await ensureApprovedDmp(token, project.project_id, committee);
   await printQuota(token);
   console.log(
-    `ids → user ${session.user.user_id} | project ${project.project_id} | file ${file.file_id} | dmp ${dmp.dmp_id}`,
+    `ids → user ${session.user.user_id} | project ${project.project_id} | file ${file.file_id} | dmp(ร่าง) ${dmp.dmp_id} | dmp(อนุมัติ=${approved.status}) ${approved.dmp_id}`,
   );
-  printCheatSheet(session, project, file, dmp);
+  printCheatSheet(session, project, file, dmp, approved);
 } catch (cause) {
   console.error(`✗ ${cause instanceof Error ? cause.message : String(cause)}`);
   process.exitCode = 1;

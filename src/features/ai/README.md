@@ -36,6 +36,7 @@ ai/
 
 **การเข้าถึง**
 - AI endpoint ทุกตัวใช้ได้เฉพาะ role `researcher` ที่เป็นเจ้าของแผนนั้น (ไม่ใช่เจ้าของ → 404 เพื่อซ่อนการมีอยู่ของแผน)
+- `generate-tasks` และ `checklist` ต้องมีแผนสถานะ `approved` ก่อน (committee approve หรือ independent finalize) — ยังไม่อนุมัติ → 409 `plan_not_approved`; `suggest`/`regenerate-field` ใช้ได้ทุกสถานะ, `chat` อยู่ใต้ `unscoped` ได้ (SPEC-ai)
 
 **โควตา**
 - ผู้ใช้ที่ใช้โทเค็นเกินลิมิตรายเดือนอยู่แล้วจะถูกปฏิเสธด้วย 429 — run เดียวที่ทำให้ล้นยังรันได้
@@ -57,7 +58,7 @@ ai/
 | --- | --- |
 | `GET /ai/quota` | ดูโควตาโทเค็นคงเหลือของตัวเอง |
 | `POST /ai/analyze-proposal` | วิเคราะห์ proposal แล้วร่างแผนใหม่ (SSE) |
-| `POST /dmps/{scope}/ai/{action}` | เรียก action (chat/suggest/regenerate-field/generate-tasks/checklist) สตรีม SSE |
+| `POST /dmps/{scope}/ai/{action}` | เรียก action (chat/suggest/regenerate-field/generate-tasks/checklist) สตรีม SSE — generate-tasks/checklist ต้องการแผน approved |
 | `GET /dmps/{scope}/ai-thread` | อ่านประวัติ thread ของ scope นั้น |
 | `PUT /dmps/{scope}/ai-thread/{entry_id}` | ตัดสิน proposal (accepted/rejected/stale) |
 | `POST /dmps/{scope}/ai-thread/clear` | ซ่อนประวัติที่ยังไม่ถูกตัดสิน |

@@ -37,6 +37,36 @@ const COMMITTEE = { ...AUTHOR, email: "e2e-ai-m@example.edu", username: "e2e-ai-
 
 const usernames = ["e2e-ai-a", "e2e-ai-o", "e2e-ai-m"];
 
+/** draft ครบตาม validateDraft (ตรง fixture ใน lifecycle.test.ts) — ใช้ยื่น/approve เพื่อทดสอบเงื่อนไข generate-tasks/checklist */
+const VALID_DRAFT = {
+  title: "AI e2e approved DMP",
+  description: "16S amplicon reads",
+  language: "eng",
+  begin_date: "2026-11-01",
+  end_date: "2028-10-31",
+  ethical_issues_exist: false,
+  contributor: [{ name: "Aran", surname: "Saelim", role: "Principal investigator", is_contact: true, email: "aran@example.edu" }],
+  cost: [],
+  dataset: [
+    {
+      dataset_id: "ds-ai-e2e",
+      type: "raw",
+      title: "16S amplicon sequence reads",
+      access: "open",
+      personal_data: "no",
+      sensitive_data: "no",
+      protection_level: "other",
+      security_classification_level: "public",
+      keyword: [],
+      domain: "generic",
+      domain_metadata: {},
+      preservation: { doi_requested: false },
+      distribution: [],
+    },
+  ],
+  schema_version: "v3.0",
+};
+
 class ScriptedClient implements AiClient {
   calls = 0;
   constructor(private script: AiStreamChunk[][]) {}
@@ -115,7 +145,7 @@ describe.skipIf(!dbReady)("ai stream e2e — flow #3", () => {
     await loadConfig();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AI_CLIENT)
-      .useValue(new ScriptedClient([toolRound(), proposalRound(), textRound(), errorRound()]))
+      .useValue(new ScriptedClient([toolRound(), proposalRound(), textRound(), errorRound(), textRound(), textRound(), textRound()]))
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -208,5 +238,38 @@ describe.skipIf(!dbReady)("ai stream e2e — flow #3", () => {
     expect(res.body.error.code).toBe("quota_exceeded");
     expect(typeof res.body.error.resets_at).toBe("string");
     await db.update(users).set({ aiTokenLimit: 0, aiTokenUsed: 0 }).where(eq(users.userId, uid));
+  });
+
+  it("generate-tasks/checklist บนแผน draft → 409 plan_not_approved ก่อนสตรีม; suggest ทำงานได้", async () => {
+    const tasks = await post(authorToken, `/dmps/${dmpId}/ai/generate-tasks`, { direction: "x" }, "flow-key-7");
+    expect(tasks.status).toBe(409);
+    expect(tasks.body.error.code).toBe("plan_not_approved");
+    const check = await post(authorToken, `/dmps/${dmpId}/ai/checklist`, { task_title: "x" }, "flow-key-8");
+    expect(check.status).toBe(409);
+    expect(check.body.error.code).toBe("plan_not_approved");
+    // suggest ไม่ต้องการ approved — แผน draft ใช้ได้
+    const suggest = await post(authorToken, `/dmps/${dmpId}/ai/suggest`, { direction: "ปรับ description" }, "flow-key-9");
+    expect(suggest.status).toBe(200);
+    expect(parseSse(suggest.text).at(-1)?.event).toBe("done");
+  });
+
+  it("committee approve แล้ว generate-tasks/checklist ทำงานได้", async () => {
+    const put = await request(app.getHttpServer())
+      .put(`/dmps/${dmpId}/draft`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .send({ draft_revision: 0, draft: VALID_DRAFT });
+    expect(put.status).toBe(200);
+    await request(app.getHttpServer()).post(`/dmps/${dmpId}/submit`).set("Authorization", `Bearer ${authorToken}`).send({ draft_revision: 1 }).expect(201);
+    await request(app.getHttpServer())
+      .post(`/dmps/${dmpId}/versions/1/approve`)
+      .set("Authorization", `Bearer ${committeeToken}`)
+      .send({ position: "Chair", note: "ok" })
+      .expect(201);
+    const tasks = await post(authorToken, `/dmps/${dmpId}/ai/generate-tasks`, { direction: "ร่าง task ชุดแรก" }, "flow-key-10");
+    expect(tasks.status).toBe(200);
+    expect(parseSse(tasks.text).at(-1)?.event).toBe("done");
+    const check = await post(authorToken, `/dmps/${dmpId}/ai/checklist`, { task_title: "เก็บข้อมูล", lifecycle_stage: "collect" }, "flow-key-11");
+    expect(check.status).toBe(200);
+    expect(parseSse(check.text).at(-1)?.event).toBe("done");
   });
 });
