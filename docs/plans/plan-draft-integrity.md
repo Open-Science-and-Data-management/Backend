@@ -15,26 +15,26 @@
 ## Task List
 
 ### Phase 1: Constraints ใน schema (foundation)
-- [ ] **Task 1: `dmps.draft` (กฎ D1)** — export `DRAFT_KEYS` (16 keys จาก `dmpSchema`) + `check("dmps_draft_object_keys", ...)` — object เปล่าผ่าน, key ต้อง ∈ DRAFT_KEYS
+- [x] **Task 1: `dmps.draft` (กฎ D1)** — export `DRAFT_KEYS` (16 keys จาก `dmpSchema`) + `check("dmps_draft_object_keys", ...)` — object เปล่าผ่าน, key ต้อง ∈ DRAFT_KEYS
   - Acceptance: `pnpm db:generate` ออก migration ที่มี check นี้; typecheck/lint ผ่าน
   - Verify: `pnpm db:generate` + อ่าน SQL ที่ได้; `pnpm typecheck`
   - Files: `src/database/schema/index.ts`, `src/database/migrations/*_draft_integrity.sql` (M: 2)
   - Deps: —
-- [ ] **Task 2: `dmp_versions` (กฎ D1+D2+D3+D4)** — `snapshot` ใช้กฎ D1 (share helper เดียวกับ Task 1), `based_on_snapshot` nullable, 4 คอลัมน์ FieldChange[] เช็ค `null OR array of object(path,label,from,to:string)`, `decision_approver` เช็ค `null OR object(key ⊆ APPROVER_KEYS, value:string)`
+- [x] **Task 2: `dmp_versions` (กฎ D1+D2+D3+D4)** — `snapshot` ใช้กฎ D1 (share helper เดียวกับ Task 1), `based_on_snapshot` nullable, 4 คอลัมน์ FieldChange[] เช็ค `null OR array of object(path,label,from,to:string)`, `decision_approver` เช็ค `null OR object(key ⊆ APPROVER_KEYS, value:string)`
   - Acceptance: migration ออกครบ 7 constraint ของตาราง; ไม่มี SQL วนซ้ำที่ไม่จำเป็น
   - Verify: `pnpm db:generate` + อ่าน SQL; `pnpm typecheck`
   - Files: `src/database/schema/index.ts`, `src/database/migrations/*_draft_integrity.sql` (M: 2)
   - Deps: 1
-- [ ] **Task 3: `ai_thread_entries.content` (กฎ D5 — แยกตาม kind)** — user → `{text, section}` หรือ `{action, direction}` (ห้ามผสม), assistant → `{action, text, proposal, stale_reason}` + ต้องมี `action`, event → `{action, usage, dmp_id}` + ต้องมี `action`; ฐานร่วม `jsonb_typeof = 'object'`
+- [x] **Task 3: `ai_thread_entries.content` (กฎ D5 — แยกตาม kind)** — user → `{text, section}` หรือ `{action, direction}` (ห้ามผสม), assistant → `{action, text, proposal, stale_reason}` + ต้องมี `action`, event → `{action, usage, dmp_id}` + ต้องมี `action`; ฐานร่วม `jsonb_typeof = 'object'`
   - Acceptance: constraint เขียนเป็น SQL CASE ตาม `kind`; typecheck/lint ผ่าน
   - Verify: `pnpm db:generate` + อ่าน SQL; `pnpm typecheck && pnpm lint`
   - Files: `src/database/schema/index.ts`, `src/database/migrations/*_draft_integrity.sql` (S: 2)
   - Deps: 1
 
 ### Checkpoint: Constraints ครบ
-- [ ] migration apply สำเร็จบน DB ที่ล้างแล้ว (`drop schema public cascade` → `pnpm db:migrate` → `pnpm db:seed`)
-- [ ] `\d` แสดง constraint D1–D5 ครบทั้ง 3 ตาราง
-- [ ] `pnpm typecheck && pnpm lint` เขียว
+- [x] migration apply สำเร็จบน DB ที่ล้างแล้ว (`drop schema public cascade` → `pnpm db:migrate` → `pnpm db:seed`)
+- [x] `\d` แสดง constraint D1–D5 ครบทั้ง 3 ตาราง
+- [x] `pnpm typecheck && pnpm lint` เขียว
 
 ### Phase 2: Tests (drift guard + บังคับจริง)
 - [ ] **Task 4: drift-guard unit test** — `tests/unit/draft-integrity.test.ts`: เทียบ `DRAFT_KEYS` ↔ `Object.keys(dmpSchema.shape)`, FieldChange key-set ↔ `diff-draft.ts`, `APPROVER_KEYS` ↔ รูปที่ approve endpoint เขียน, content key-set ↔ literal ใน `ai.service.ts` (137/141/155/249)
