@@ -252,6 +252,22 @@ curl <base URL>/dmps/018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90/ai/chat \
 - **section** (string, optional เมื่อ action `chat`) section ของแผนที่สนทนาอยู่
 - **direction** (string, optional สำหรับ action อื่น) คำสั่งเสริม — body ของ action อื่น passthrough ส่งตรงเข้า prompt
 
+Body เพิ่มเติม (optional, ผ่าน passthrough — เป็นบริบทให้ prompt ต่อ action):
+
+| Action             | Fields                                                     |
+| ------------------ | ---------------------------------------------------------- |
+| `regenerate-field` | `path` (JSON pointer ลง draft เช่น `/dataset/0/title`) — บอกฟิลด์เป้าหมาย |
+| `checklist`        | `task_title`, `lifecycle_stage`, `dataset_title` — โมเดลไม่มี tool อ่าน task บริบทต้องมาทาง body เท่านั้น |
+
+รูปของ event `proposal` ที่โมเดล emit ต่อ action (FE ใช้ apply):
+
+| Action             | Shape                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `suggest`          | `{"proposals":[{"path":"/…","text":"…","reason":"…"}]}` — path เป็น JSON pointer ลง draft, ต่อ path หนึ่งข้อเสนอ; `text` เป็น string หรือ object/array เมื่อ path ชี้รายการใหม่ของ array (index = ความยาวปัจจุบัน = เพิ่มรายการ) |
+| `regenerate-field` | `{"path":"/…","text":"…"}` — เขียน `text` ลง `path` ตรง ๆ                                           |
+| `generate-tasks`   | `{"tasks":[{"title","details","lifecycle_stage","priority","dataset_id?"}]}` — `lifecycle_stage`: `collect|process|analyse|preserve|share`, `priority`: `low|medium|high`, `dataset_id` เว้นได้เมื่อเป็น task ข้าม-output |
+| `checklist`        | `{"steps":[{"label":"…"}]}` — ยิงต่อเข้า `POST /tasks/:taskId/checklist` โดยผู้เรียก                      |
+
 ### Response
 
 ```json
