@@ -3,6 +3,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -16,6 +17,7 @@ import {
   uniqueIndex,
   uuid,
   varchar,
+  type PgColumn,
 } from "drizzle-orm/pg-core";
 
 // ── enums ──────────────────────────────────────────────────────────────────
@@ -158,6 +160,22 @@ export const projectMembers = pgTable(
 );
 
 // ── dmps / versions ────────────────────────────────────────────────────────
+
+// D1 — top-level keys ของ draft/snapshot ต้อง ⊆ dmpSchema (ADR-0031); drift-guard
+// unit test (tests/unit/draft-integrity.test.ts) เทียบกับ Object.keys(dmpSchema.shape)
+const draftKeys = [
+  "dmp_id", "project_id", "title", "description", "language",
+  "alternate_identifier", "begin_date", "end_date", "ethical_issues_exist",
+  "ethical_issues_description", "ethical_issues_report",
+  "indigenous_considerations", "contributor", "cost", "dataset", "schema_version",
+] as const;
+export const DRAFT_KEYS: readonly string[] = draftKeys;
+
+/** กฎ D1 ร่วม draft/snapshot/based_on_snapshot — {} ว่างผ่าน (แผนใหม่เริ่มเป็น {}) */
+const draftObjectKeysCheck = (col: PgColumn, name: string) =>
+  // keys เป็น literal ผ่าน sql.raw — drizzle มิฉะนั้นออกเป็น placeholder $n ซึ่ง CHECK ใช้ไม่ได้
+  check(name, sql`${col} = '{}'::jsonb or (jsonb_typeof(${col}) = 'object' and not exists (select 1 from jsonb_object_keys(${col}) k where k not in (${sql.raw(draftKeys.map((k) => `'${k}'`).join(", "))})))`);
+
 export const dmps = pgTable("dmps", {
   dmpId: uuid("dmp_id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").references(() => projects.projectId, { onDelete: "restrict" }), // null = ยังไม่ file เข้าโครงการ
@@ -177,6 +195,8 @@ export const dmps = pgTable("dmps", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("dmps_project_idx").on(t.projectId),
+  // D1 — draft keys ⊆ dmpSchema (ADR-0031)
+  draftObjectKeysCheck(t.draft, "dmps_draft_object_keys"),
 ]);
 
 export const dmpVersions = pgTable(
