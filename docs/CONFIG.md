@@ -1,0 +1,85 @@
+# CONFIG.md — คำอธิบายค่า tunable ใน config.toml
+
+> ตัวไฟล์ `config.toml` เก็บเฉพาะค่า + comment สั้น ๆ; คำอธิบายเต็มอยู่ที่นี่
+> Loader จุดเดียว: `src/shared/config/` (zod validate ทุกคีย์ — ใส่ผิดชนิด → fail-fast ตอน bootstrap)
+> แก้ `config.toml` แล้วต้อง restart (`loadConfig` ครั้งเดียวตอนเริ่ม, ไม่ reload ระหว่างรัน)
+> โครงสร้าง mirror โฟลเดอร์ (`_appliesTo` ระบุ feature) · arc42 §8.7
+
+## [app]
+
+- **name** — ชื่อ service (ยังไม่ถูกใช้ใน logic; ไว้ระบุตัวตนใน log/metrics ภายหลัง)
+- **debug** — เผื่อไว้เปิดโหมด verbose ในอนาคต (ปัจจุบันไม่มี consumer — ตั้งค่าอะไรก็ไม่มีผล)
+
+## [auth] — `src/features/auth/`
+
+- **accessTokenTtlMinutes** — อายุ access token (JWT, นาที) — หมดอายุ FE ต้อง refresh (flow #15);
+  สั้น = ปลอดภัยขึ้นแต่ refresh ถี่, ยาว = สบายมือแต่ token หลุดมีผลนาน
+- **refreshTokenTtlDays** — อายุ refresh token (วัน) — นานเท่าไร session ที่ไม่ได้ใช้ยังกลับมาได้
+
+### [auth.argon2] — ADR-0029 (OWASP minimum)
+
+พารามิเตอร์ Argon2id ตอน hash รหัสผ่าน — ยิ่งสูงยิ่งแพงทั้งกับผู้ใช้ (หน่วงตอน sign-in) และผู้โจมตี
+
+- **memoryCostKiB** — หน่วยความจำต่อ hash (KiB); 19456 = 19 MiB (OWASP ขั้นต่ำ)
+- **timeCost** — จำนวนรอบ iteration
+- **parallelism** — จำนวน lane ขนาน (1 = CPU เครื่องเล็กทำไหว)
+
+ปรับค่าแล้ว hash เดิมยัง verify ได้ (พารามิเตอร์ฝังใน hash) — ผู้ใช้จะได้ hash ใหม่เมื่อเปลี่ยนรหัสเอง
+
+## [files] — `src/features/files/`
+
+- **maxFileSizeMb** — ขนาดไฟล์ upload สูงสุด (MB) เกิน → 400; ปัจจุบัน docx ≤ 20MB ตาม FE ai.md จึงตั้ง 25 กันเหลื่อม
+- **storagePath** — โฟลเดอร์เก็บ blob จริง (disk-storage adapter, path เทียบ cwd ของ process)
+
+### [files.rag] — ADR-0025
+
+ตัด chunk เอกสารเพื่อ embed + semantic search (search_proposal ของ AI)
+
+- **chunkTargetTokens** — เป้าขนาด chunk (tokens) — เล็ก = ค้นเป๊ะขึ้นแต่ context ต่อ hit น้อยลง
+- **chunkOverlapPercent** — % ทับซ้อนระหว่าง chunk กันความหมายถูกตัดครึ่ง (0 = ไม่ทับ)
+- **topK** — จำนวน chunk ที่คืนต่อ query (search_proposal)
+- **chunkTableMaxTokens** — cap ขนาด chunk ตาราง (tokens) — เกิน → ตารางแตก part i/n ตัดที่ขอบแถว (Rev 2, D7)
+- **embeddingModel** — โมเดล ONNX บน HF (TransformersEmbedding, fp16/CUDA ก่อน fallback CPU q8 — ADR-0028);
+  เปลี่ยนรุ่น = vector เดิมใช้ไม่ได้ ต้อง re-embed ทุกไฟล์ (dims ต้องตรง schema) — re-embed ผูกกับ
+  `embedding_model` mismatch ต่อไฟล์ (เกิดเองตอน retrieve)
+
+  ค่าปัจจุบัน: Qwen3 0.6B fp16/CUDA (ladder เดิม) — last-token pooling, query มี instruction prefix,
+  1024 dims (ADR-0031); re-embed อัตโนมัติเมื่อ model mismatch; Qdrant/…-onnx ไม่มี fp16 (FastEmbed-only) เลยต้อง repo นี้
+- **embeddingMaxTokens** — cap ความยาว input embedding (tokenizer truncate) — เครื่อง deploy RAM น้อย = ลดค่านี้
+  (worst-case activation ~ batch×cap²; e5 ตัดที่ 512 เสมอไม่ว่าค่านี้)
+- **formFastPath** — true = docx ที่ตรง schema FF2569 ingest แบบ parse OOXML ตรง (SPEC ff2569):
+  chunk ระดับ field, คำถามติดทุก chunk, meta jsonb — match ไม่ครบพอ → fallback generic เดิม + form_parsed: false
+  false = ปิด fast path ทั้งหมด อัปโหลดผ่าน generic path เสมอ
+- **vlmModel** — slug โมเดล vision บน OpenRouter (image_url message) ใช้ caption รูปในฟิลด์แบบ image
+  ระหว่าง ingest แบบ fast path — caption ติด chunk แทนพิกเซล (SPEC ff2569 Task 7, Q10):
+  quota หมด/ยิงพลาด → ข้าม caption + warn, upload ไม่ fail; usage นับโควตาผู้อัปโหลดผ่าน reconcile เดิม (ADR-0023)
+  ว่าง (`""`) = ปิด caption — fast path ยังทำงานแต่ฟิลด์รูปไม่เกิด chunk
+
+## [ai] — `src/features/ai/`
+
+- **mock** — สวิตช์เปิด/ปิดการเรียกโมเดลจริง (TC-6):
+  - false = OpenRouter จริง — ต้องมี `OPENROUTER_KEY` ใน .env, มีค่าเครดิต, ออก network ทุก run
+  - true = MockAiClient — ไม่ออก network ไม่ใช้ key เหมาะกับ dev/test/เดโม่:
+    - ไหลตาม ReAct เดิม: รอบแรกเรียก tool ตัวแรกที่มี 1 ครั้ง → รอบสองตอบ JSON canned (ออกเป็น delta 2 ชิ้น + proposal)
+    - usage คงที่ (input 100 / cached 20 / output 50) — โควตายังถูกหัก 132/run ตามสูตร reconcile จริง เห็นพฤติกรรมโควตาได้โดยไม่เปลืองเครดิต
+    - e2e/integration ทั้งชุดไม่อ่านค่านี้ (override AI_CLIENT ที่ test เอง) — ค่านี้มีผลกับ `pnpm dev` และ app จริงเท่านั้น
+
+### [ai.models]
+
+โมเดลต่อ action — key คือชื่อ action ตาม endpoint (ลบ -, path /dmps/{scope}/ai/{action} + /ai/analyze-proposal):
+`chat` · `suggest` · `regenerate-field` · `generate-tasks` · `checklist` · `analyze_proposal`
+
+- action ไหนไม่ปรากฏในตาราง → ใช้ `default`
+- ค่า = slug รูปแบบ "vendor/model" จาก https://openrouter.ai/models เช่น "openai/gpt-4o-mini", "anthropic/claude-haiku-4.5"
+
+เงื่อนไขเลือกรุ่น:
+
+- ต้องรองรับ tool calling (กรองได้ที่ openrouter.ai/models?supported_parameters=tools) — loop ยิง tools ทุก action ยกเว้นบาง flow
+- คำตอบสุดท้ายถูก parse เป็น JSON proposal — รุ่นที่ตาม instruction ตรงไป (structured outputs) จะเสถียรกว่า
+- ราคา/เร็วต่างกันมาก — analyze_proposal อ่าน proposal เต็มเล่มจึงแพงสุด คุ้มใช้รุ่นแข็ง; chat ใช้รุ่นเล็กก็พอ
+
+ใส่ slug ผิด → OpenRouter 400 → error terminal `ai_invalid_request` (ไม่ crash)
+
+## [notifications] — `src/features/notifications/`
+
+(ยังไม่มี tunable — notifications เป็น SSE/polling ตาม ADR-0024, ไม่มี SMTP จริงใน v1)

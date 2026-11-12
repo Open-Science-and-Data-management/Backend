@@ -224,8 +224,8 @@ function toUsage(u: WireUsage | undefined): AiUsage | null {
 }
 
 function normalizeFinish(reason: string): AiFinishReason {
-  // OpenRouter normalize เป็น stop/tool_calls/length/content_filter/error — ตัด content_filter ลง error
-  return reason === "stop" || reason === "tool_calls" || reason === "length" ? reason : "error";
+  // OpenRouter normalize เป็น stop/tool_calls/length/content_filter/error — ให้ content_filter ผ่านตรงเพื่อแยก code ตอน terminal
+  return reason === "stop" || reason === "tool_calls" || reason === "length" || reason === "content_filter" ? reason : "error";
 }
 
 function wireError(status: number, body: unknown): AiError {

@@ -37,7 +37,7 @@ export interface AiUsage {
   cachedTokens: number;
 }
 
-export type AiFinishReason = "stop" | "tool_calls" | "length" | "error";
+export type AiFinishReason = "stop" | "tool_calls" | "length" | "content_filter" | "error";
 
 export type AiStreamChunk =
   | { type: "delta"; text: string }

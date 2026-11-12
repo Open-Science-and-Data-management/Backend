@@ -60,7 +60,7 @@ export class ReactLoop {
       await emit({ event: "status", message: "กำลังประมวลผล" });
 
       let rounds = 0;
-      let finishReason: "stop" | "tool_calls" | "length" | "error" = "error";
+      let finishReason: "stop" | "tool_calls" | "length" | "content_filter" | "error" = "error";
 
       for (;;) {
         if (params.signal?.aborted === true) {
@@ -94,11 +94,13 @@ export class ReactLoop {
         }
 
         if (finishReason === "stop") break;
-        // length/error — length ไม่ใช่ความผิดพลาดฝั่งระบบ แต่ยังต้องจบ terminal event
+        // length/content_filter — ไม่ใช่ความผิดพลาดฝั่งระบบ แต่ยังต้องจบ terminal event
         throw new AiError(
           finishReason === "length"
             ? { code: "ai_invalid_request", message: "โมเดลตัดคำตอบยาวเกิน limit", retryable: false }
-            : { code: "ai_provider_error", message: "โมเดลจบลำดับอย่างผิดปกติ", retryable: true },
+            : finishReason === "content_filter"
+              ? { code: "ai_content_filtered", message: "โมเดลตัดคำตอบด้วย safety filter ของผู้ให้บริการ — retry ด้วยคำถามเดิมไม่ช่วย ต้องปรับเนื้อหาที่ให้โมเดลอ่าน", retryable: false }
+              : { code: "ai_provider_error", message: "โมเดลจบลำดับอย่างผิดปกติ", retryable: true },
         );
       }
 

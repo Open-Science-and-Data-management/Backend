@@ -1264,3 +1264,324 @@ registry.registerPath({
     403: { description: "- `permission_denied` — admin ไม่มีสิทธิ์เข้าโครงการ" },
   },
 });
+
+// ── AI — quota + SSE streaming (ADR-0018/0023) + thread ───────────────────
+// หมายเหตุการเทส SSE: Swagger UI "Try it out" รอ stream จบแล้วโชว์ raw frames ทีเดียว
+// (ไม่ไหล real-time) — เทสแบบไหลจริงใช้ `curl -N` ดู docs/api/ai.md; ตั้ง ai.mock = true
+// ใน config.toml เพื่อไม่ยิง OpenRouter จริงตอน dev
+
+const idemHeader = () =>
+  z.object({
+    "Idempotency-Key": oa(z.string(), {
+      description: "บังคับ — ขาด → 400 field_invalid; ส่งซ้ำภายใน 24 ชม. replay snapshot เดิม (ไม่หักโควตาซ้ำ), ซ้ำขณะ run ยังบิน → 409",
+      example: "chat-2026-11-12-1",
+    }),
+  });
+
+// raw SSE frames ตามที่ sseSink เขียนจริง (event: <type> / data: <json> / blank line)
+const sseExample = [
+  'event: status',
+  'data: {"event":"status","message":"โควตา AI คงเหลือ 12000 tokens"}',
+  '',
+  'event: delta',
+  'data: {"event":"delta","text":"ร่างแผนจาก proposal ..."}',
+  '',
+  'event: proposal',
+  'data: {"event":"proposal","proposal":{"title":"แผนการจัดการข้อมูล (ร่าง)"}}',
+  '',
+  'event: done',
+  'data: {"event":"done","entry_id":"018f4b5d-8c52-7e6f-9a3b-4d9c2f7e5a18","dmp_id":"018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90","usage":{"input_tokens":1200,"output_tokens":850,"cached_input_tokens":300,"total_tokens":2050}}',
+  '',
+].join("\n");
+
+const sseResponse = () => ({
+  description: "SSE stream — จบด้วย `done` หรือ `error` หนึ่ง event เสมอ (ADR-0018); error ก่อน event แรกยังได้ error envelope ปกติผ่าน global filter",
+  content: { "text/event-stream": { schema: z.string() as never, example: sseExample } },
+});
+
+const quota429 = {
+  description: "- `quota_exceeded` — โควตาเดือนนี้หมด (`resets_at` แนบใน error)",
+  content: {
+    "application/json": {
+      schema: registeredSchemas.ErrorEnvelope,
+      example: { error: { type: "invalid_request_error", code: "quota_exceeded", message: "โควตา AI ของเดือนนี้หมดแล้ว", resets_at: "2026-12-01T00:00:00.000Z" } },
+    },
+  },
+};
+
+const conflict409 = {
+  description: "- `idempotency_in_flight` — key เดิมยัง run ไม่จบ (รอแล้ว replay ได้)",
+  content: {
+    "application/json": {
+      schema: registeredSchemas.ErrorEnvelope,
+      example: { error: { type: "conflict_error", code: "idempotency_in_flight", message: "An identical run is still in progress" } },
+    },
+  },
+};
+
+// ── GET /ai/quota ─────────────────────────────────────────────────────────
+registry.registerPath({
+  path: "/ai/quota",
+  method: "get",
+  tags: ["AI"],
+  summary: "ดูโควตา token คงเหลือของตัวเอง (reset lazy ต้นเดือนถัดไป UTC)",
+  operationId: "getAiQuota",
+  responses: {
+    200: {
+      description: "quota object",
+      content: {
+        "application/json": {
+          example: { object: "ai_quota", limit: 200000, used: 34500, remaining: 165500, resets_at: "2026-12-01T00:00:00.000Z" },
+        },
+      },
+    },
+  },
+});
+
+// ── POST /ai/analyze-proposal ─────────────────────────────────────────────
+registry.registerPath({
+  path: "/ai/analyze-proposal",
+  method: "post",
+  tags: ["AI"],
+  summary: "วิเคราะห์ proposal แล้วร่างแผนใหม่ (SSE) — ไม่ส่ง dmp_id = สร้างแผนใหม่, fail แล้วแผนที่สร้างใน call นี้ถูกลบ",
+  operationId: "analyzeProposal",
+  request: {
+    headers: idemHeader(),
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            project_id: oa(z.string(), { description: "โปรเจกต์ที่ผู้เรียกเห็นได้", example: "1b4f0e28-9a71-4d5c-8f2e-3a6b9c0d5e81" }),
+            file_id: oa(z.string(), { description: "ไฟล์ purpose `proposal` บนโปรเจกต์นั้น — ไฟล์อื่น/ต่างโปรเจกต์ → 404 file_not_found", example: "018f3a2c-7b41-7d5e-9f2a-2d8b4f6a0c71" }),
+            dmp_id: oa(z.string().optional(), { description: "redraft แผนที่มีอยู่ (ต้องเป็นของผู้เรียก) แทนสร้างใหม่", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+            direction: oa(z.string().optional(), { description: "คำสั่งเสริมส่งเข้า prompt แทน prompt เริ่มต้น", example: "เน้นประเด็นการเก็บรักษาระยะยาว" }),
+          }) as never,
+          example: {
+            project_id: "1b4f0e28-9a71-4d5c-8f2e-3a6b9c0d5e81",
+            file_id: "018f3a2c-7b41-7d5e-9f2a-2d8b4f6a0c71",
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    200: sseResponse(),
+    400: fieldInvalid400,
+    409: conflict409,
+    422: {
+      description: "- `proposal_unreadable` — ไฟล์ไม่มีข้อความที่ extract ได้ (ไม่มีแผนถูกสร้าง)",
+      content: {
+        "application/json": {
+          schema: registeredSchemas.ErrorEnvelope,
+          example: { error: { type: "invalid_request_error", code: "proposal_unreadable", message: "The proposal file has no extractable text" } },
+        },
+      },
+    },
+    429: quota429,
+  },
+});
+
+// ── POST /dmps/{scope}/ai/{action} — SSE ──────────────────────────────────
+registry.registerPath({
+  path: "/dmps/{scope}/ai/{action}",
+  method: "post",
+  tags: ["AI"],
+  summary: "เรียก AI action สตรีม SSE ใต้แผน (หรือ unscoped — chat เท่านั้น) — ทุก run persist ลง thread",
+  operationId: "runAiAction",
+  request: {
+    headers: idemHeader(),
+    params: z.object({
+      scope: oa(z.string(), { description: "`dmp_id` หรือ `unscoped` (chat เท่านั้น — action อื่นใต้ unscoped → 400)", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+      action: oa(z.enum(["chat", "suggest", "regenerate-field", "generate-tasks", "checklist"]), { description: "ค่าอื่น → 404 action_not_found", example: "chat" }),
+    }),
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          // union ตาม validator จริง — chat → chatInputSchema, action อื่น → genericActionInputSchema (passthrough)
+          schema: z.union([
+            z.object({
+              message: oa(z.string().min(1), { description: "ข้อความของผู้ใช้ — บังคับเมื่อ action = chat", example: "สรุปช่องว่างของแผนช่วง data collection" }),
+              section: oa(z.string().optional(), { description: "section ของแผนที่สนทนาอยู่", example: "4" }),
+            }),
+            z.object({
+              direction: oa(z.string().optional(), { description: "คำสั่งเสริม — action อื่น passthrough เข้า prompt", example: "สรุปประเด็นที่ยังขาด" }),
+            }),
+          ]) as never,
+          examples: {
+            chat: { summary: "chat — message บังคับ (action เดียวที่ unscoped ได้)", value: { message: "สรุปช่องว่างของแผนช่วง data collection", section: "4" } },
+            "regenerate-field": { summary: "regenerate-field — path ชี้ฟิลด์เป้าหมายใน draft", value: { direction: "ร่างใหม่ให้กระชับกว่านี้", path: "/dataset/0/title" } },
+            checklist: { summary: "checklist — บริบท task ต้องมาทาง body (โมเดลไม่มี tool อ่าน task)", value: { task_title: "จัดทำ metadata ชุดภาพถ่าย", lifecycle_stage: "process", dataset_title: "ภาพถ่ายโบราณสถาน" } },
+            suggest: { summary: "suggest / generate-tasks — ส่ง direction หรือ {}", value: {} },
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    200: sseResponse(),
+    400: fieldInvalid400,
+    409: conflict409,
+    429: quota429,
+  },
+});
+
+// ── GET /dmps/{scope}/ai-thread ───────────────────────────────────────────
+registry.registerPath({
+  path: "/dmps/{scope}/ai-thread",
+  method: "get",
+  tags: ["AI"],
+  summary: "อ่านประวัติ thread ของ scope — เรียงเก่า → ใหม่, ซ่อน entry ที่ hidden เสมอ",
+  operationId: "listAiThread",
+  request: {
+    params: z.object({
+      scope: oa(z.string(), { description: "`dmp_id` หรือ `unscoped`", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+    }),
+    query: z.object({
+      limit: oa(z.coerce.number().int().min(1).max(100).optional(), { description: "ต่อหน้า (ค่าเริ่มต้น 50)", example: 50 }),
+      before: oa(z.string().optional(), { description: "cursor — entry_id ตัวเก่าสุดของหน้าปัจจุบัน เพื่อดึงหน้าเก่ากว่าต่อ", example: "018f4b5d-8c52-7e6f-9a3b-1e7a3c9f4b62" }),
+    }) as never,
+  },
+  responses: {
+    200: {
+      description: "ListEnvelope ของ ai_thread_entry",
+      content: {
+        "application/json": {
+          example: {
+            object: "list",
+            data: [
+              {
+                object: "ai_thread_entry",
+                entry_id: "018f4b5d-8c52-7e6f-9a3b-1e7a3c9f4b62",
+                dmp_id: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90",
+                kind: "user",
+                content: { text: "สรุปช่องว่างของแผน", section: "4" },
+                token_count: 0,
+                decision: null,
+                hidden: false,
+                created_at: "2026-11-08T09:15:40.104Z",
+              },
+            ],
+            has_more: false,
+            total_count: 1,
+          },
+        },
+      },
+    },
+  },
+});
+
+// ── PUT /dmps/{scope}/ai-thread/{entryId} ─────────────────────────────────
+registry.registerPath({
+  path: "/dmps/{scope}/ai-thread/{entryId}",
+  method: "put",
+  tags: ["AI"],
+  summary: "ตัดสิน proposal ของ assistant entry — ตัดสินได้ครั้งเดียว (ซ้ำ → 409)",
+  operationId: "setAiProposalDecision",
+  request: {
+    params: z.object({
+      scope: oa(z.string(), { description: "`dmp_id` หรือ `unscoped` — ต้องตรงแผนของ entry", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+      entryId: oa(z.string(), { description: "id ของ assistant entry (ได้จาก done event หรือ GET thread)", example: "018f4b5d-8c52-7e6f-9a3b-4d9c2f7e5a18" }),
+    }),
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            status: oa(z.enum(["accepted", "rejected", "stale"]), { description: "ผลการตัดสิน", example: "accepted" }),
+            stale_reason: oa(z.string().optional(), { description: "เหตุผล — บันทึกลง content เมื่อ status = stale", example: "proposal อ้าง dataset เก่าแล้ว" }),
+          }) as never,
+          example: { status: "accepted" },
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "thread entry ที่ตั้ง decision แล้ว",
+      content: {
+        "application/json": {
+          example: {
+            object: "ai_thread_entry",
+            entry_id: "018f4b5d-8c52-7e6f-9a3b-4d9c2f7e5a18",
+            dmp_id: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90",
+            kind: "assistant",
+            content: { action: "chat", text: "...", proposal: null },
+            token_count: 1300,
+            decision: "accepted",
+            hidden: false,
+            created_at: "2026-11-08T09:15:42.310Z",
+          },
+        },
+      },
+    },
+    409: {
+      description: "- `proposal_settled` — entry ถูกตัดสินไปแล้ว",
+      content: {
+        "application/json": {
+          schema: registeredSchemas.ErrorEnvelope,
+          example: { error: { type: "conflict_error", code: "proposal_settled", message: "โปรซัลนี้ถูกตัดสินไปแล้ว" } },
+        },
+      },
+    },
+  },
+});
+
+// ── POST /dmps/{scope}/ai-thread/clear ────────────────────────────────────
+registry.registerPath({
+  path: "/dmps/{scope}/ai-thread/clear",
+  method: "post",
+  tags: ["AI"],
+  summary: "ซ่อน (soft-delete) entry user+assistant ที่ยังไม่ accepted — เก็บ event และ accepted ตลอด",
+  operationId: "clearAiThread",
+  request: {
+    params: z.object({
+      scope: oa(z.string(), { description: "`dmp_id` หรือ `unscoped`", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "ผลการ clear",
+      content: {
+        "application/json": {
+          example: { object: "ai_thread", scope: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90", hidden: 6, kept: 2 },
+        },
+      },
+    },
+  },
+});
+
+// ── POST /ai-thread/adopt ─────────────────────────────────────────────────
+registry.registerPath({
+  path: "/ai-thread/adopt",
+  method: "post",
+  tags: ["AI"],
+  summary: "ย้าย thread unscoped ทั้งหมดของผู้เรียกเข้าผูกกับแผน (chat ก่อนมีแผนแล้วค่อยเลือกแผน)",
+  operationId: "adoptAiThread",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            from: oa(z.literal("unscoped"), { description: 'ค่าเดียว — ไม่ใช่ "unscoped" → 400 field_invalid', example: "unscoped" }),
+            to: oa(z.string(), { description: "id ของแผนปลายทาง (ต้องเป็นของผู้เรียก)", example: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" }),
+          }) as never,
+          example: { from: "unscoped", to: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90" },
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "ผลการย้าย",
+      content: {
+        "application/json": {
+          example: { object: "ai_thread", scope: "018f3a2c-7b41-7d5e-9f2a-8b2c4e6a1d90", moved: 4 },
+        },
+      },
+    },
+    400: fieldInvalid400,
+  },
+});

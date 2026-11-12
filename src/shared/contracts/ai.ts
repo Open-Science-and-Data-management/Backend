@@ -12,6 +12,7 @@ export const aiErrorCodeSchema = z.enum([
   "ai_provider_error", // 502/503 — ไม่มี provider รับงาน (retry ได้)
   "ai_network_error", // fetch ล้ม/timeout ก่อนได้ response (retry ได้)
   "ai_stream_error", // error กลาง stream (top-level error chunk)
+  "ai_content_filtered", // provider ตัดคำตอบด้วย safety filter (finish_reason: content_filter — retry ไม่ช่วย)
   "ai_aborted", // caller ยกเลิกกลางทาง
 ]);
 export type AiErrorCode = z.infer<typeof aiErrorCodeSchema>;

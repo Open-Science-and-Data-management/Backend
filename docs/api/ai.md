@@ -148,6 +148,7 @@ $\color{blue}{\textsf{GET}}$ /ai/quota
   | `ai_provider_error`  | ไม่มี provider รับงาน (retry ได้)            |
   | `ai_network_error`   | fetch ล้ม/timeout ก่อนได้ response (retry ได้)|
   | `ai_stream_error`    | error กลาง stream                           |
+  | `ai_content_filtered`| provider ตัดคำตอบด้วย safety filter (retry ด้วย input เดิมไม่ช่วย) |
   | `ai_aborted`         | caller ยกเลิกกลางทาง (ปิด connection)        |
 
 **message** (string, required) คำอธิบาย

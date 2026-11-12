@@ -307,7 +307,7 @@ data: {"event":"done","entry_id":"...","dmp_id":"018f3a2c-...","usage":{...}}
 - `dmp_id` — แผนที่เกี่ยวข้อง (เมื่อ run อยู่ใต้ `dmp_id` หรือ analyze-proposal สร้างแผนสำเร็จ)
 - `usage` — สรุป token ของ run: `input_tokens`, `output_tokens`, `cached_input_tokens`, `total_tokens`
 
-ถ้าจบแบบ `error`: ได้ `code` (รหัสที่ระบบแปลจาก provider มาให้เป็นชุดเดียว เช่น `ai_rate_limited` = provider จำกัดอัตรา, `ai_aborted` = ผู้เรียกปิด connection กลางทาง), `message`, `retryable` (retry ได้ไหม), `usage` ของส่วนที่โมเดลทำไปแล้ว (โควตาถูกหักแม้ fail)
+ถ้าจบแบบ `error`: ได้ `code` (รหัสที่ระบบแปลจาก provider มาให้เป็นชุดเดียว เช่น `ai_rate_limited` = provider จำกัดอัตรา, `ai_content_filtered` = provider ตัดคำตอบด้วย safety filter (retry ด้วย input เดิมไม่ช่วย), `ai_aborted` = ผู้เรียกปิด connection กลางทาง), `message`, `retryable` (retry ได้ไหม), `usage` ของส่วนที่โมเดลทำไปแล้ว (โควตาถูกหักแม้ fail)
 
 ### แล้วรู้ได้ยังไงว่า output ของโมเดลเป็น format ที่ใช้ได้จริง
 
