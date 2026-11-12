@@ -173,8 +173,22 @@ export const DRAFT_KEYS: readonly string[] = draftKeys;
 
 /** กฎ D1 ร่วม draft/snapshot/based_on_snapshot — {} ว่างผ่าน (แผนใหม่เริ่มเป็น {}) */
 const draftObjectKeysCheck = (col: PgColumn, name: string) =>
-  // keys เป็น literal ผ่าน sql.raw — drizzle มิฉะนั้นออกเป็น placeholder $n ซึ่ง CHECK ใช้ไม่ได้
+  // keys เป็น literal ผ่าน sql.raw — drizzle มิฉะนั้นออกเป็น placeholder $n ซึ่ง CHECK ใช้ได้
   check(name, sql`${col} = '{}'::jsonb or (jsonb_typeof(${col}) = 'object' and not exists (select 1 from jsonb_object_keys(${col}) k where k not in (${sql.raw(draftKeys.map((k) => `'${k}'`).join(", "))})))`);
+
+// D2 — FieldChange (diff-draft.ts) — target ไม่ตรวจ (data เก่าข้าม version ไม่มีมัน — ADR-0031 known gap)
+export const FIELD_CHANGE_KEYS = ["path", "label", "from", "to"] as const;
+
+// กฎ D2 — null หรือ array ของ object ที่ path/label/from/to เป็น string
+const fieldChangeArrayCheck = (col: PgColumn, name: string) =>
+  check(name, sql`${col} is null or (jsonb_typeof(${col}) = 'array' and not exists (
+    select 1 from jsonb_array_elements(${col}) e
+    where jsonb_typeof(e) <> 'object'
+       or exists (select 1 from jsonb_object_keys(e) k where k not in ('path', 'label', 'from', 'to'))
+       or exists (select 1 from jsonb_object_keys(e) k where k in ('path', 'label', 'from', 'to') and jsonb_typeof(e -> k) <> 'string')))`);
+
+// D4 — approver ณ เวลาตัดสิน (dmps.service.ts decide) — drift-guard test เทียบรูปนี้
+export const APPROVER_KEYS = ["user_id", "name", "position", "mbox"] as const;
 
 export const dmps = pgTable("dmps", {
   dmpId: uuid("dmp_id").primaryKey().defaultRandom(),
@@ -227,6 +241,16 @@ export const dmpVersions = pgTable(
     unique("dmp_versions_dmp_number_uq").on(t.dmpId, t.number),
     // หนึ่ง pending ต่อแผน — Postgres บังคับเอง (หมวด 4.3/4.4)
     uniqueIndex("dmp_versions_one_pending_uq").on(t.dmpId).where(sql`status = 'pending'`),
+    // D1 — snapshot/based_on_snapshot keys ⊆ dmpSchema (ADR-0031)
+    draftObjectKeysCheck(t.snapshot, "dmp_versions_snapshot_object_keys"),
+    draftObjectKeysCheck(t.basedOnSnapshot, "dmp_versions_based_on_snapshot_object_keys"),
+    // D2 — FieldChange[] (ADR-0031)
+    fieldChangeArrayCheck(t.changes, "dmp_versions_changes_field_changes"),
+    fieldChangeArrayCheck(t.minorEdits, "dmp_versions_minor_edits_field_changes"),
+    fieldChangeArrayCheck(t.carriedEdits, "dmp_versions_carried_edits_field_changes"),
+    fieldChangeArrayCheck(t.droppedEdits, "dmp_versions_dropped_edits_field_changes"),
+    // D4 — decision_approver: null หรือ object key ⊆ APPROVER_KEYS, value string ทั้งหมด
+    check("dmp_versions_decision_approver_keys", sql`${t.decisionApprover} is null or (jsonb_typeof(${t.decisionApprover}) = 'object' and not exists (select 1 from jsonb_object_keys(${t.decisionApprover}) k where k not in ('user_id', 'name', 'position', 'mbox')) and not exists (select 1 from jsonb_object_keys(${t.decisionApprover}) k where jsonb_typeof(${t.decisionApprover} -> k) <> 'string'))`),
   ],
 );
 
