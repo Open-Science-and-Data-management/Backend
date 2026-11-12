@@ -173,19 +173,15 @@ export const DRAFT_KEYS: readonly string[] = draftKeys;
 
 /** กฎ D1 ร่วม draft/snapshot/based_on_snapshot — {} ว่างผ่าน (แผนใหม่เริ่มเป็น {}) */
 const draftObjectKeysCheck = (col: PgColumn, name: string) =>
-  // keys เป็น literal ผ่าน sql.raw — drizzle มิฉะนั้นออกเป็น placeholder $n ซึ่ง CHECK ใช้ได้
-  check(name, sql`${col} = '{}'::jsonb or (jsonb_typeof(${col}) = 'object' and not exists (select 1 from jsonb_object_keys(${col}) k where k not in (${sql.raw(draftKeys.map((k) => `'${k}'`).join(", "))})))`);
+  // CHECK ใช้ subquery ไม่ได้ — จับ "key นอกชุด" ด้วย jsonb_path_exists (immutable, PG12+)
+  check(name, sql`jsonb_typeof(${col}) = 'object' and not jsonb_path_exists(${col}, '$.keyvalue() ? (!(@.key == $ks))', ${sql.raw(`'{"ks":[${draftKeys.map((k) => `"${k}"`).join(",")}]}'::jsonb`)}, true)`);
 
 // D2 — FieldChange (diff-draft.ts) — target ไม่ตรวจ (data เก่าข้าม version ไม่มีมัน — ADR-0031 known gap)
 export const FIELD_CHANGE_KEYS = ["path", "label", "from", "to"] as const;
 
 // กฎ D2 — null หรือ array ของ object ที่ path/label/from/to เป็น string
 const fieldChangeArrayCheck = (col: PgColumn, name: string) =>
-  check(name, sql`${col} is null or (jsonb_typeof(${col}) = 'array' and not exists (
-    select 1 from jsonb_array_elements(${col}) e
-    where jsonb_typeof(e) <> 'object'
-       or exists (select 1 from jsonb_object_keys(e) k where k not in ('path', 'label', 'from', 'to'))
-       or exists (select 1 from jsonb_object_keys(e) k where k in ('path', 'label', 'from', 'to') and jsonb_typeof(e -> k) <> 'string')))`);
+  check(name, sql`${col} is null or (jsonb_typeof(${col}) = 'array' and not jsonb_path_exists(${col}, '$[*] ? (@.type() != "object" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != "string" || @.label.type() != "string" || @.from.type() != "string" || @.to.type() != "string")', '{"ks":["path","label","from","to"]}', true))`);
 
 // D4 — approver ณ เวลาตัดสิน (dmps.service.ts decide) — drift-guard test เทียบรูปนี้
 export const APPROVER_KEYS = ["user_id", "name", "position", "mbox"] as const;
@@ -250,7 +246,7 @@ export const dmpVersions = pgTable(
     fieldChangeArrayCheck(t.carriedEdits, "dmp_versions_carried_edits_field_changes"),
     fieldChangeArrayCheck(t.droppedEdits, "dmp_versions_dropped_edits_field_changes"),
     // D4 — decision_approver: null หรือ object key ⊆ APPROVER_KEYS, value string ทั้งหมด
-    check("dmp_versions_decision_approver_keys", sql`${t.decisionApprover} is null or (jsonb_typeof(${t.decisionApprover}) = 'object' and not exists (select 1 from jsonb_object_keys(${t.decisionApprover}) k where k not in ('user_id', 'name', 'position', 'mbox')) and not exists (select 1 from jsonb_object_keys(${t.decisionApprover}) k where jsonb_typeof(${t.decisionApprover} -> k) <> 'string'))`),
+    check("dmp_versions_decision_approver_keys", sql`${t.decisionApprover} is null or (jsonb_typeof(${t.decisionApprover}) = 'object' and not jsonb_path_exists(${t.decisionApprover}, '$.keyvalue() ? (!(@.key == $ks) || @.value.type() != "string")', '{"ks":["user_id","name","position","mbox"]}', true))`),
   ],
 );
 
@@ -339,20 +335,12 @@ export const aiThreadEntries = pgTable("ai_thread_entries", {
 }, (t) => [
   index("ai_thread_scope_idx").on(t.dmpId, t.ownerId, t.createdAt),
   // D5 — content รูปตาม kind (ADR-0031; literals ที่ ai.service.ts เขียน — drift-guard test จับ)
-  // user → {text,section} หรือ {action,direction} ห้ามผสม; assistant/event → ต้องมี action
+  // user → {text,section} หรือ {action,direction} ห้ามผสม (และไม่ว่าง); assistant/event → ต้องมี action
   check("ai_thread_entries_content_by_kind", sql`
     jsonb_typeof(${t.content}) = 'object' and case ${t.kind}
-      when 'user' then
-        (not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('text', 'section'))
-          and exists (select 1 from jsonb_object_keys(${t.content}) k where k in ('text', 'section')))
-        or (not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'direction'))
-          and exists (select 1 from jsonb_object_keys(${t.content}) k where k in ('action', 'direction')))
-      when 'assistant' then
-        exists (select 1 from jsonb_object_keys(${t.content}) k where k = 'action')
-        and not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'text', 'proposal', 'stale_reason'))
-      when 'event' then
-        exists (select 1 from jsonb_object_keys(${t.content}) k where k = 'action')
-        and not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'usage', 'dmp_id'))
+      when 'user' then jsonb_path_exists(${t.content}, '$ ? (exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks1))) || exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks2))))', '{"ks1":["text","section"],"ks2":["action","direction"]}', true)
+      when 'assistant' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', '{"ks":["action","text","proposal","stale_reason"]}', true)
+      when 'event' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', '{"ks":["action","usage","dmp_id"]}', true)
     end
   `),
 ]);

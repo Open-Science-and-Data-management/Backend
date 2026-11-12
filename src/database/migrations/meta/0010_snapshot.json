@@ -1,5 +1,5 @@
 {
-  "id": "63ede545-5e20-4f3f-980e-89d78e94db5f",
+  "id": "20135f7f-b48a-47fd-a0df-c152fc23a97e",
   "prevId": "138872da-3208-4fd2-b8f2-b4ddf43dbb19",
   "version": "7",
   "dialect": "postgresql",
@@ -128,7 +128,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ai_thread_entries_content_by_kind": {
+          "name": "ai_thread_entries_content_by_kind",
+          "value": "\n    jsonb_typeof(\"ai_thread_entries\".\"content\") = 'object' and case \"ai_thread_entries\".\"kind\"\n      when 'user' then jsonb_path_exists(\"ai_thread_entries\".\"content\", '$ ? (exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks1))) || exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks2))))', '{\"ks1\":[\"text\",\"section\"],\"ks2\":[\"action\",\"direction\"]}', true)\n      when 'assistant' then jsonb_path_exists(\"ai_thread_entries\".\"content\", '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(\"ai_thread_entries\".\"content\", '$.keyvalue() ? (!(@.key == $ks))', '{\"ks\":[\"action\",\"text\",\"proposal\",\"stale_reason\"]}', true)\n      when 'event' then jsonb_path_exists(\"ai_thread_entries\".\"content\", '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(\"ai_thread_entries\".\"content\", '$.keyvalue() ? (!(@.key == $ks))', '{\"ks\":[\"action\",\"usage\",\"dmp_id\"]}', true)\n    end\n  "
+        }
+      },
       "isRLSEnabled": false
     },
     "public.credentials": {
@@ -365,7 +370,36 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "dmp_versions_snapshot_object_keys": {
+          "name": "dmp_versions_snapshot_object_keys",
+          "value": "jsonb_typeof(\"dmp_versions\".\"snapshot\") = 'object' and not jsonb_path_exists(\"dmp_versions\".\"snapshot\", '$.keyvalue() ? (!(@.key == $ks))', '{\"ks\":[\"dmp_id\",\"project_id\",\"title\",\"description\",\"language\",\"alternate_identifier\",\"begin_date\",\"end_date\",\"ethical_issues_exist\",\"ethical_issues_description\",\"ethical_issues_report\",\"indigenous_considerations\",\"contributor\",\"cost\",\"dataset\",\"schema_version\"]}'::jsonb, true)"
+        },
+        "dmp_versions_based_on_snapshot_object_keys": {
+          "name": "dmp_versions_based_on_snapshot_object_keys",
+          "value": "jsonb_typeof(\"dmp_versions\".\"based_on_snapshot\") = 'object' and not jsonb_path_exists(\"dmp_versions\".\"based_on_snapshot\", '$.keyvalue() ? (!(@.key == $ks))', '{\"ks\":[\"dmp_id\",\"project_id\",\"title\",\"description\",\"language\",\"alternate_identifier\",\"begin_date\",\"end_date\",\"ethical_issues_exist\",\"ethical_issues_description\",\"ethical_issues_report\",\"indigenous_considerations\",\"contributor\",\"cost\",\"dataset\",\"schema_version\"]}'::jsonb, true)"
+        },
+        "dmp_versions_changes_field_changes": {
+          "name": "dmp_versions_changes_field_changes",
+          "value": "\"dmp_versions\".\"changes\" is null or (jsonb_typeof(\"dmp_versions\".\"changes\") = 'array' and not jsonb_path_exists(\"dmp_versions\".\"changes\", '$[*] ? (@.type() != \"object\" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != \"string\" || @.label.type() != \"string\" || @.from.type() != \"string\" || @.to.type() != \"string\")', '{\"ks\":[\"path\",\"label\",\"from\",\"to\"]}', true))"
+        },
+        "dmp_versions_minor_edits_field_changes": {
+          "name": "dmp_versions_minor_edits_field_changes",
+          "value": "\"dmp_versions\".\"minor_edits\" is null or (jsonb_typeof(\"dmp_versions\".\"minor_edits\") = 'array' and not jsonb_path_exists(\"dmp_versions\".\"minor_edits\", '$[*] ? (@.type() != \"object\" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != \"string\" || @.label.type() != \"string\" || @.from.type() != \"string\" || @.to.type() != \"string\")', '{\"ks\":[\"path\",\"label\",\"from\",\"to\"]}', true))"
+        },
+        "dmp_versions_carried_edits_field_changes": {
+          "name": "dmp_versions_carried_edits_field_changes",
+          "value": "\"dmp_versions\".\"carried_edits\" is null or (jsonb_typeof(\"dmp_versions\".\"carried_edits\") = 'array' and not jsonb_path_exists(\"dmp_versions\".\"carried_edits\", '$[*] ? (@.type() != \"object\" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != \"string\" || @.label.type() != \"string\" || @.from.type() != \"string\" || @.to.type() != \"string\")', '{\"ks\":[\"path\",\"label\",\"from\",\"to\"]}', true))"
+        },
+        "dmp_versions_dropped_edits_field_changes": {
+          "name": "dmp_versions_dropped_edits_field_changes",
+          "value": "\"dmp_versions\".\"dropped_edits\" is null or (jsonb_typeof(\"dmp_versions\".\"dropped_edits\") = 'array' and not jsonb_path_exists(\"dmp_versions\".\"dropped_edits\", '$[*] ? (@.type() != \"object\" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != \"string\" || @.label.type() != \"string\" || @.from.type() != \"string\" || @.to.type() != \"string\")', '{\"ks\":[\"path\",\"label\",\"from\",\"to\"]}', true))"
+        },
+        "dmp_versions_decision_approver_keys": {
+          "name": "dmp_versions_decision_approver_keys",
+          "value": "\"dmp_versions\".\"decision_approver\" is null or (jsonb_typeof(\"dmp_versions\".\"decision_approver\") = 'object' and not jsonb_path_exists(\"dmp_versions\".\"decision_approver\", '$.keyvalue() ? (!(@.key == $ks) || @.value.type() != \"string\")', '{\"ks\":[\"user_id\",\"name\",\"position\",\"mbox\"]}', true))"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.dmps": {
@@ -516,7 +550,7 @@
       "checkConstraints": {
         "dmps_draft_object_keys": {
           "name": "dmps_draft_object_keys",
-          "value": "\"dmps\".\"draft\" = '{}'::jsonb or (jsonb_typeof(\"dmps\".\"draft\") = 'object' and not exists (select 1 from jsonb_object_keys(\"dmps\".\"draft\") k where k not in ('dmp_id', 'project_id', 'title', 'description', 'language', 'alternate_identifier', 'begin_date', 'end_date', 'ethical_issues_exist', 'ethical_issues_description', 'ethical_issues_report', 'indigenous_considerations', 'contributor', 'cost', 'dataset', 'schema_version')))"
+          "value": "jsonb_typeof(\"dmps\".\"draft\") = 'object' and not jsonb_path_exists(\"dmps\".\"draft\", '$.keyvalue() ? (!(@.key == $ks))', '{\"ks\":[\"dmp_id\",\"project_id\",\"title\",\"description\",\"language\",\"alternate_identifier\",\"begin_date\",\"end_date\",\"ethical_issues_exist\",\"ethical_issues_description\",\"ethical_issues_report\",\"indigenous_considerations\",\"contributor\",\"cost\",\"dataset\",\"schema_version\"]}'::jsonb, true)"
         }
       },
       "isRLSEnabled": false

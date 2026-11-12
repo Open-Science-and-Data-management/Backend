@@ -68,22 +68,8 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1794466302555,
-      "tag": "0010_bouncy_gorgon",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1794466343456,
-      "tag": "0011_watery_colossus",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1794466389021,
-      "tag": "0012_blushing_supernaut",
+      "when": 1794466884938,
+      "tag": "0010_glamorous_nico_minoru",
       "breakpoints": true
     }
   ]
