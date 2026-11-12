@@ -3,7 +3,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { dmps, projects } from "@/database/schema/index.js";
+import { DRAFT_KEYS, dmps, projects } from "@/database/schema/index.js";
 import { DB } from "@/database/database.module.js";
 import type { Db } from "@/features/projects/projects.repository.js";
 import { ProjectsService } from "@/features/projects/projects.service.js";
@@ -227,42 +227,76 @@ export class AiService {
     const hint = quotaHint(q.limit, q.used);
 
     const events: AiSseEvent[] = [];
+    let analyzedDraft: unknown = null; // loop ส่ง proposal event ก่อน terminal เสมอ — เก็บไว้เขียน draft ตอน terminal
     const emit = async (event: AiSseEvent): Promise<void> => {
       if (hint !== null && events.length === 0) {
         events.push(hint);
         await params.sink(hint);
       }
-      if (event.event === "done" && dmpId !== null) event.dmp_id = dmpId;
+      if (event.event === "done" || event.event === "error") {
+        // terminal — ทุกอย่างต้องลง DB ก่อน event สุดท้ายหลุดออก stream
+        // (เคยพัง: done หลุดก่อน persist → persist throw → filter พยายามส่ง envelope ทับ SSE ได้ ERR_HTTP_HEADERS_SENT)
+        let terminal: AiSseEvent = event;
+        if (terminal.event === "done") {
+          const targetId = dmpId;
+          if (targetId !== null && draftWritable(analyzedDraft)) {
+            const title =
+              typeof analyzedDraft.title === "string" && analyzedDraft.title.trim() !== "" && analyzedDraft.title.length <= 500
+                ? analyzedDraft.title
+                : null; // ไม่มี title ใช้ได้ → คง title เดิมของแผน (เคย fallback "" แล้วลบชื่อแผนทิ้ง)
+            await this.db.update(dmps).set({
+              draft: analyzedDraft,
+              draftRevision: 1,
+              updatedAt: new Date(),
+              ...(title !== null ? { title } : {}),
+            }).where(eq(dmps.dmpId, targetId));
+            terminal = { ...terminal, dmp_id: targetId };
+          } else {
+            // โมเดลคืนรูปที่เขียน draft ไม่ได้ (เช่น patch list ไม่ใช่ maDMP) → ถือว่า run ล้มเหลว ไม่ผลักขึ้น DB เอง
+            if (createdHere && targetId !== null) {
+              await this.db.delete(dmps).where(eq(dmps.dmpId, targetId));
+              dmpId = null;
+            }
+            terminal = {
+              event: "error",
+              code: "ai_provider_error",
+              message: "โมเดลคืนร่างแผนที่ใช้เขียน draft ไม่ได้ — ลองรันใหม่",
+              ...(terminal.usage !== undefined ? { usage: terminal.usage } : {}),
+            };
+          }
+        } else if (createdHere && dmpId !== null) {
+          // run fail → แผนที่สร้างเองใน call นี้ ลบทิ้ง (ไม่มีแผนค้าง)
+          await this.db.delete(dmps).where(eq(dmps.dmpId, dmpId));
+          dmpId = null;
+        }
+        const usage = "usage" in terminal ? (terminal.usage ?? null) : null;
+        await aiRepo.chargeQuota(this.db, claims.sub, usage);
+        await aiRepo.insertEntry(this.db, {
+          dmpId,
+          ownerId: claims.sub,
+          kind: "event",
+          content: { action: "analyze-proposal", dmp_id: dmpId, usage },
+        });
+        // snapshot รวม terminal — บันทึกก่อน event หลุดออก stream เสมอ replay จึงได้ stream ครบ
+        if (idem !== null) await aiRepo.setIdempotencySnapshot(this.db, idem.keyId, [...events, terminal]);
+        events.push(terminal);
+        await params.sink(terminal);
+        return;
+      }
+      if (event.event === "proposal") analyzedDraft = event.proposal;
       events.push(event);
       await params.sink(event);
     };
 
     const result = await this.loop.run({
       action: "analyze_proposal",
-      system: prompts.systems.suggest,
+      system: prompts.systems.analyze_proposal,
       userMessage: input.direction ?? prompts.defaultUserMessages.analyze_proposal,
       ctx: { claims, projectId: input.project_id, dmpId },
       signal: params.signal,
       onEvent: emit,
     });
 
-    if (result.error === null && result.proposal !== null && typeof result.proposal === "object" && dmpId !== null) {
-      const title =
-        "title" in result.proposal && typeof result.proposal.title === "string" ? result.proposal.title : "";
-      await this.db.update(dmps).set({ draft: result.proposal, title, draftRevision: 1, updatedAt: new Date() }).where(eq(dmps.dmpId, dmpId));
-    } else if (result.error !== null && createdHere && dmpId !== null) {
-      await this.db.delete(dmps).where(eq(dmps.dmpId, dmpId));
-      dmpId = null;
-    }
-
-    await aiRepo.chargeQuota(this.db, claims.sub, result.usage);
-    await aiRepo.insertEntry(this.db, {
-      dmpId,
-      ownerId: claims.sub,
-      kind: "event",
-      content: { action: "analyze-proposal", dmp_id: dmpId, usage: result.usage },
-    });
-    if (idem !== null) await aiRepo.setIdempotencySnapshot(this.db, idem.keyId, events);
     return { events, usage: result.usage, dmpId };
   }
 
@@ -362,6 +396,17 @@ export class AiService {
 function requireIdempotencyKey(header: string): string {
   if (header === "") throw new ApiError(400, "field_invalid", "Idempotency-Key header is required for AI actions", "/idempotency-key");
   return header;
+}
+
+/** draft ที่เขียนลง dmps.draft ได้ — กรอบเดียวกับ constraint D1 (dmps_draft_object_keys, ADR-0031):
+ * object และ top-level keys ⊆ DRAFT_KEYS ความครบถ้วนเป็นกฎตอน submit (validateDraft) ไม่ใช่ตอน persist */
+function draftWritable(draft: unknown): draft is Record<string, unknown> {
+  return (
+    draft !== null &&
+    typeof draft === "object" &&
+    !Array.isArray(draft) &&
+    Object.keys(draft).every((key) => DRAFT_KEYS.includes(key))
+  );
 }
 
 function doneDmpId(events: AiSseEvent[]): string | null {

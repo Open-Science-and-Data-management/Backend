@@ -49,6 +49,12 @@ export function fieldInvalid(error: ZodError): ApiError {
 export class ErrorEnvelopeFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
+    if (res.headersSent) {
+      // stream (SSE) เริ่มไปแล้ว — ส่ง envelope ทับไม่ได้ (ERR_HTTP_HEADERS_SENT) เหลือทางเดียวคือปิด connection
+      // FE รู้จาก socket ที่หายกลาง stream ว่า run ล้ม; terminal event ปกติจัดการใน service ก่อนถึงจุดนี้แล้ว
+      res.end();
+      return;
+    }
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     if (status >= 500) console.error(exception);
     // multer โยน PayloadTooLarge — แปลงเป็น code ของ catalog เอง (413 file_too_large)

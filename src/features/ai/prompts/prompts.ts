@@ -2,7 +2,7 @@
 // fail-fast: ไฟล์หาย/schema เพี้ยน → throw ตอน start ไม่ปล่อย run ด้วย prompt ว่าง
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import { AI_ACTIONS, type AiAction } from "../actions.js";
+import { AI_ACTIONS } from "../actions.js";
 
 const raw: unknown = parse(readFileSync(new URL("./prompts.yaml", import.meta.url), "utf8"));
 
@@ -12,9 +12,12 @@ const shape = raw as {
 };
 
 const systems = shape.systems ?? {};
-for (const action of AI_ACTIONS) {
-  const text = systems[action];
-  if (typeof text !== "string" || text.trim() === "") throw new Error(`prompts.yaml: missing systems.${action}`);
+// analyze-proposal มี system เฉพาะตัว (maDMP draft ทั้งก้อน) — ไม่ได้ใช้ร่วมกับ suggest (patch list คนละ contract)
+const PROMPT_KEYS = [...AI_ACTIONS, "analyze_proposal"] as const;
+type PromptKey = (typeof PROMPT_KEYS)[number];
+for (const key of PROMPT_KEYS) {
+  const text = systems[key];
+  if (typeof text !== "string" || text.trim() === "") throw new Error(`prompts.yaml: missing systems.${key}`);
 }
 const defaultUserMessages = shape.default_user_messages ?? {};
 for (const [key, text] of Object.entries(defaultUserMessages)) {
@@ -22,7 +25,7 @@ for (const [key, text] of Object.entries(defaultUserMessages)) {
 }
 
 export const prompts: {
-  systems: Record<AiAction, string>;
+  systems: Record<PromptKey, string>;
   defaultUserMessages: Record<string, string>;
 } = {
   systems,

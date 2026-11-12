@@ -2,7 +2,9 @@
 // abort/error จบด้วย terminal event เสมอ; author-only; quota_exceeded ก่อนสตรีม (SPEC-ai, ADR-0018)
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
-import { credentials, dmps, projects, users } from "@/database/schema/index.js";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { credentials, dmps, fileRecords, projects, users } from "@/database/schema/index.js";
 import request from "supertest";
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
@@ -37,6 +39,9 @@ const COMMITTEE = { ...AUTHOR, email: "e2e-ai-m@example.edu", username: "e2e-ai-
 
 const usernames = ["e2e-ai-a", "e2e-ai-o", "e2e-ai-m"];
 
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const fixture = (name: string) => readFile(fileURLToPath(new URL("../fixtures/" + name, import.meta.url)));
+
 /** draft ครบตาม validateDraft (ตรง fixture ใน lifecycle.test.ts) — ใช้ยื่น/approve เพื่อทดสอบเงื่อนไข generate-tasks/checklist */
 const VALID_DRAFT = {
   title: "AI e2e approved DMP",
@@ -69,9 +74,11 @@ const VALID_DRAFT = {
 
 class ScriptedClient implements AiClient {
   calls = 0;
+  seen: AiCompleteParams[] = [];
   constructor(private script: AiStreamChunk[][]) {}
 
-  async *complete(_params: AiCompleteParams): AsyncIterable<AiStreamChunk> {
+  async *complete(params: AiCompleteParams): AsyncIterable<AiStreamChunk> {
+    this.seen.push(params);
     const i = this.calls;
     this.calls += 1;
     for (const chunk of this.script[i] ?? []) yield chunk;
@@ -108,6 +115,26 @@ function errorRound(): AiStreamChunk[] {
   return [{ type: "finish", finishReason: "error", usage: null }];
 }
 
+/** analyze-proposal — โมเดลตอบ patch list {proposals:[…]} ทั้งก้อน (ไม่ใช่ maDMP draft — รูปที่เคยทำ 23514) */
+function proposalsListRound(): AiStreamChunk[] {
+  const body = JSON.stringify({ proposals: [{ path: "/title", text: "ชื่อจาก proposal", reason: "อ้างหลักฐาน" }] });
+  return [
+    { type: "delta", text: body },
+    { type: "assistant_message", content: body, toolCalls: [] },
+    { type: "finish", finishReason: "stop", usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10, cachedTokens: 0 } },
+  ];
+}
+
+/** analyze-proposal — โมเดลตอบ maDMP draft ทั้งก้อน (contract ที่ถูกต้อง) */
+function draftRound(): AiStreamChunk[] {
+  const body = JSON.stringify({ ...VALID_DRAFT, title: "ร่างจาก proposal" });
+  return [
+    { type: "delta", text: body },
+    { type: "assistant_message", content: body, toolCalls: [] },
+    { type: "finish", finishReason: "stop", usage: { promptTokens: 5, completionTokens: 6, totalTokens: 11, cachedTokens: 0 } },
+  ];
+}
+
 function parseSse(text: string): AiSseEvent[] {
   return text
     .split("\n\n")
@@ -119,14 +146,18 @@ async function cleanup() {
   const ids = (await db.select({ userId: users.userId }).from(users).where(inArray(users.username, usernames))).map((r) => r.userId);
   if (ids.length === 0) return;
   const projectIds = (await db.select({ id: projects.projectId }).from(projects).where(inArray(projects.createdBy, ids))).map((r) => r.id);
-  if (projectIds.length > 0) await db.delete(dmps).where(inArray(dmps.projectId, projectIds));
-  await db.delete(projects).where(inArray(projects.createdBy, ids));
+  if (projectIds.length > 0) {
+    await db.delete(dmps).where(inArray(dmps.projectId, projectIds));
+    await db.delete(fileRecords).where(inArray(fileRecords.projectId, projectIds)); // analyze-proposal test อัปโหลด proposal
+    await db.delete(projects).where(inArray(projects.createdBy, ids));
+  }
   await db.delete(credentials).where(inArray(credentials.username, usernames));
   await db.delete(users).where(inArray(users.userId, ids));
 }
 
 describe.skipIf(!dbReady)("ai stream e2e — flow #3", () => {
   let app: INestApplication;
+  let scripted: ScriptedClient;
   let authorToken: string;
   let otherToken: string;
   let committeeToken: string;
@@ -143,9 +174,20 @@ describe.skipIf(!dbReady)("ai stream e2e — flow #3", () => {
   beforeAll(async () => {
     process.env.JWT_SECRET ??= "e2e-secret";
     await loadConfig();
+    scripted = new ScriptedClient([
+      toolRound(),
+      proposalRound(),
+      textRound(),
+      errorRound(),
+      textRound(),
+      textRound(),
+      textRound(),
+      proposalsListRound(),
+      draftRound(),
+    ]);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AI_CLIENT)
-      .useValue(new ScriptedClient([toolRound(), proposalRound(), textRound(), errorRound(), textRound(), textRound(), textRound()]))
+      .useValue(scripted)
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -271,5 +313,71 @@ describe.skipIf(!dbReady)("ai stream e2e — flow #3", () => {
     const check = await post(authorToken, `/dmps/${dmpId}/ai/checklist`, { task_title: "เก็บข้อมูล", lifecycle_stage: "collect" }, "flow-key-11");
     expect(check.status).toBe(200);
     expect(parseSse(check.text).at(-1)?.event).toBe("done");
+  });
+
+  // regression — เคยพัง: analyze ใช้ system ของ suggest → โมเดลคืน {"proposals":[…]} → persist เขียนทั้งก้อนลง
+  // dmps.draft โดน constraint dmps_draft_object_keys ปฏิเศษ (23514) หลัง done หลุดไปแล้ว → filter พยายามส่ง
+  // envelope ทับ SSE ได้ ERR_HTTP_HEADERS_SENT + โควตาไม่โดนตัด
+  it("analyze-proposal: โมเดลคืน {proposals} → จบ error ไม่เขียน draft โควตาโดนตัด replay ได้ครบ", async () => {
+    const up = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/files`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .field("purpose", "proposal")
+      .attach("file", await fixture("proposal-sample.docx"), { filename: "proposal-bad.docx", contentType: DOCX_MIME });
+    expect(up.status).toBe(201);
+    const fileId = up.body.file_id as string;
+    const uid = (await db.select({ id: users.userId }).from(users).where(eq(users.username, "e2e-ai-a")).limit(1)).at(0)?.id;
+    if (uid === undefined) throw new Error("author user missing");
+    await db.update(users).set({ aiTokenUsed: 0 }).where(eq(users.userId, uid));
+
+    const res = await post(authorToken, "/ai/analyze-proposal", { project_id: projectId, file_id: fileId }, "analyze-bad-1");
+    expect(res.status).toBe(200);
+    const events = parseSse(res.text);
+    expect(events.at(-1)?.event).toBe("error");
+    const callsAfterRun = scripted.calls;
+    // แผนที่ analyze สร้างเองถูกลบ — เหลือแผนเดิมจาก beforeAll (draft ยังครบ ไม่โดนแตะ)
+    const plans = await db
+      .select({ id: dmps.dmpId, rev: dmps.draftRevision })
+      .from(dmps)
+      .where(eq(dmps.projectId, projectId));
+    expect(plans).toHaveLength(1);
+    expect(plans.at(0)?.rev).toBe(1); // แผนเดิมผ่าน autosave/submit ใน test ก่อนหน้า — ไม่ใช่แผนที่ analyze แตะ
+    // โควตาโดนตัดก่อน terminal (usage 10 จาก round สุดท้าย) — แม้ run ล้ม
+    const used = (await db.select({ used: users.aiTokenUsed }).from(users).where(eq(users.userId, uid))).at(0)?.used;
+    expect(used).toBe(10);
+    // replay ด้วย key เดิม — snapshot รวม terminal event ไม่ยิง provider ซ้ำ
+    const replay = await post(authorToken, "/ai/analyze-proposal", { project_id: projectId, file_id: fileId }, "analyze-bad-1");
+    expect(replay.status).toBe(200);
+    expect(parseSse(replay.text).map((e) => e.event)).toEqual(events.map((e) => e.event));
+    expect(scripted.calls).toBe(callsAfterRun); // replay จาก snapshot — ไม่ยิง provider ซ้ำ
+  });
+
+  it("analyze-proposal: โมเดลคืน maDMP draft → เขียน draft/title/revision 1 + ใช้ system analyze_proposal", async () => {
+    const up = await request(app.getHttpServer())
+      .post(`/projects/${projectId}/files`)
+      .set("Authorization", `Bearer ${authorToken}`)
+      .field("purpose", "proposal")
+      .attach("file", await fixture("proposal-sample.docx"), { filename: "proposal-good.docx", contentType: DOCX_MIME });
+    expect(up.status).toBe(201);
+    const fileId = up.body.file_id as string;
+    const res = await post(authorToken, "/ai/analyze-proposal", { project_id: projectId, file_id: fileId }, "analyze-good-1");
+    expect(res.status).toBe(200);
+    const done = parseSse(res.text).at(-1);
+    expect(done?.event).toBe("done");
+    const newId = done?.event === "done" ? done.dmp_id : undefined;
+    if (newId === undefined) throw new Error("done event ต้องมี dmp_id ของแผนใหม่");
+    expect(newId).not.toBe(dmpId); // สร้างแผนใหม่ ไม่ใช่แผนที่ submit ไปแล้ว
+    const row = (await db.select({ title: dmps.title, rev: dmps.draftRevision, draft: dmps.draft }).from(dmps).where(eq(dmps.dmpId, newId))).at(0);
+    expect(row?.title).toBe("ร่างจาก proposal"); // fix: title จาก draft ไม่ใช่ fallback ""
+    expect(row?.rev).toBe(1);
+    const draft = row?.draft;
+    const draftTitle =
+      draft !== null && typeof draft === "object" && "title" in draft && typeof draft.title === "string"
+        ? draft.title
+        : undefined;
+    expect(draftTitle).toBe("ร่างจาก proposal");
+    // fix 1 — analyze ต้องส่ง system เฉพาะ analyze_proposal (maDMP draft contract) ไม่ใช่ suggest (patch list)
+    const systemPrompt = scripted.seen.at(-1)?.messages.find((m) => m.role === "system")?.content ?? "";
+    expect(systemPrompt).toContain("pure maDMP JSON");
   });
 });
