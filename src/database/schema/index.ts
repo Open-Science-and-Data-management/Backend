@@ -338,6 +338,23 @@ export const aiThreadEntries = pgTable("ai_thread_entries", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("ai_thread_scope_idx").on(t.dmpId, t.ownerId, t.createdAt),
+  // D5 — content รูปตาม kind (ADR-0031; literals ที่ ai.service.ts เขียน — drift-guard test จับ)
+  // user → {text,section} หรือ {action,direction} ห้ามผสม; assistant/event → ต้องมี action
+  check("ai_thread_entries_content_by_kind", sql`
+    jsonb_typeof(${t.content}) = 'object' and case ${t.kind}
+      when 'user' then
+        (not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('text', 'section'))
+          and exists (select 1 from jsonb_object_keys(${t.content}) k where k in ('text', 'section')))
+        or (not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'direction'))
+          and exists (select 1 from jsonb_object_keys(${t.content}) k where k in ('action', 'direction')))
+      when 'assistant' then
+        exists (select 1 from jsonb_object_keys(${t.content}) k where k = 'action')
+        and not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'text', 'proposal', 'stale_reason'))
+      when 'event' then
+        exists (select 1 from jsonb_object_keys(${t.content}) k where k = 'action')
+        and not exists (select 1 from jsonb_object_keys(${t.content}) k where k not in ('action', 'usage', 'dmp_id'))
+    end
+  `),
 ]);
 
 export const idempotencyKeys = pgTable("idempotency_keys", {
