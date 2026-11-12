@@ -179,9 +179,10 @@ const draftObjectKeysCheck = (col: PgColumn, name: string) =>
 // D2 — FieldChange (diff-draft.ts) — target ไม่ตรวจ (data เก่าข้าม version ไม่มีมัน — ADR-0031 known gap)
 export const FIELD_CHANGE_KEYS = ["path", "label", "from", "to"] as const;
 
-// กฎ D2 — null หรือ array ของ object ที่ path/label/from/to เป็น string
+// กฎ D2 — null หรือ array ของ object ที่มี path/label/from/to เป็น string ครบ
+// (key อื่นเช่น target/edit_type ผ่าน — ADR-0031: target ไม่ตรวจ เพราะ data เก่าข้าม version ไม่มีมัน)
 const fieldChangeArrayCheck = (col: PgColumn, name: string) =>
-  check(name, sql`${col} is null or (jsonb_typeof(${col}) = 'array' and not jsonb_path_exists(${col}, '$[*] ? (@.type() != "object" || exists(@.keyvalue() ? (!(@.key == $ks))) || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != "string" || @.label.type() != "string" || @.from.type() != "string" || @.to.type() != "string")', '{"ks":["path","label","from","to"]}', true))`);
+  check(name, sql`${col} is null or (jsonb_typeof(${col}) = 'array' and not jsonb_path_exists(${col}, '$[*] ? (@.type() != "object" || !exists(@.path) || !exists(@.label) || !exists(@.from) || !exists(@.to) || @.path.type() != "string" || @.label.type() != "string" || @.from.type() != "string" || @.to.type() != "string")', '{}', true))`);
 
 // D4 — approver ณ เวลาตัดสิน (dmps.service.ts decide) — drift-guard test เทียบรูปนี้
 export const APPROVER_KEYS = ["user_id", "name", "position", "mbox"] as const;
