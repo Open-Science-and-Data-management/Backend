@@ -313,6 +313,9 @@ SSE stream จบด้วย terminal event เดียว เมื่อส�
   | `event`     | บันทึก metadata ของ run (usage, dmp_id) — ไม่แสดงใน chat |
 
 - **content** (object) เนื้อหาของ entry รูปร่างตาม `kind` (เช่น `{text, section}` ของ user chat, `{action, text, proposal}` ของ assistant)
+
+> **DB integrity (ADR-0031):** Postgres บังคับ key-set ของ `content` ตาม `kind` — `user` → `{text, section}` หรือ `{action, direction}` (ห้ามผสม), `assistant` → key ⊆ `{action, text, proposal, stale_reason}` โดยต้องมี `action`, `event` → key ⊆ `{action, usage, dmp_id}` โดยต้องมี `action` รูปผิด/ผสมกันเข้า DB ไม่ได้แม้หลุด validation → 500 (bug signal)
+
 - **token_count** (integer, required) token ที่ entry นี้ใช้ (assistant ใช้ total ของ run)
 - **decision** (string, nullable) ผลการตัดสิน proposal — มีได้เฉพาะ `assistant` ที่ตัดสินแล้ว
 

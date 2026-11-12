@@ -85,6 +85,9 @@
   - **name** (string, required) ชื่อของผู้อนุมัติ
   - **position** (string, required) ตำแหน่งของผู้อนุมัติ
   - **mbox** (string, nullable) อีเมลของผู้อนุมัติ หรือ `null` หากไม่มีข้อมูล
+
+> **DB integrity (ADR-0031):** `decision_approver` ถูก Postgres บังคับรูปร่าง — `null` หรือ object ที่ key ⊆ `{user_id, name, position, mbox}` โดย value เป็น string ทั้งหมด (mbox ว่างถูกบันทึกเป็น string ว่าง ไม่ใช่ null ที่ระดับ DB) รูปผิดที่หลุด validation เข้า DB ไม่ได้ → 500 (bug signal)
+
 - **note** (string, nullable) บันทึกคำตัดสิน (decision note) หรือ `null` หากไม่มี
 
 ---
