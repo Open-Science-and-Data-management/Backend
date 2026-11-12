@@ -321,6 +321,13 @@ export const notifications = pgTable("notifications", {
 ]);
 
 // ── ai_thread_entries / idempotency_keys (ADR-0023) ───────────────────────
+// D5 — content key-set ต่อ kind (literals ที่ ai.service.ts เขียน — drift-guard test เทียบ)
+export const USER_CONTENT_KEYS = [["text", "section"], ["action", "direction"]] as const;
+export const ASSISTANT_CONTENT_KEYS = ["action", "text", "proposal", "stale_reason"] as const;
+export const EVENT_CONTENT_KEYS = ["action", "usage", "dmp_id"] as const;
+
+const keySet = (keys: readonly string[]) => `[${keys.map((k) => `"${k}"`).join(",")}]`;
+
 export const aiThreadEntries = pgTable("ai_thread_entries", {
   entryId: uuid("entry_id").primaryKey().defaultRandom(),
   dmpId: uuid("dmp_id").references(() => dmps.dmpId, { onDelete: "cascade" }), // null = scope "unscoped"
@@ -339,9 +346,9 @@ export const aiThreadEntries = pgTable("ai_thread_entries", {
   // user → {text,section} หรือ {action,direction} ห้ามผสม (และไม่ว่าง); assistant/event → ต้องมี action
   check("ai_thread_entries_content_by_kind", sql`
     jsonb_typeof(${t.content}) = 'object' and case ${t.kind}
-      when 'user' then jsonb_path_exists(${t.content}, '$ ? (exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks1))) || exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks2))))', '{"ks1":["text","section"],"ks2":["action","direction"]}', true)
-      when 'assistant' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', '{"ks":["action","text","proposal","stale_reason"]}', true)
-      when 'event' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', '{"ks":["action","usage","dmp_id"]}', true)
+      when 'user' then jsonb_path_exists(${t.content}, '$ ? (exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks1))) || exists(@.keyvalue()) && !exists(@.keyvalue() ? (!(@.key == $ks2))))', ${`'{"ks1":${keySet(USER_CONTENT_KEYS[0])},"ks2":${keySet(USER_CONTENT_KEYS[1])}}'`}, true)
+      when 'assistant' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', ${`'{"ks":${keySet(ASSISTANT_CONTENT_KEYS)}}'`}, true)
+      when 'event' then jsonb_path_exists(${t.content}, '$ ? (exists(@.action))', '{}', true) and not jsonb_path_exists(${t.content}, '$.keyvalue() ? (!(@.key == $ks))', ${`'{"ks":${keySet(EVENT_CONTENT_KEYS)}}'`}, true)
     end
   `),
 ]);
