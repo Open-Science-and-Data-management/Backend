@@ -25,18 +25,8 @@ import * as aiRepo from "./ai.repository.js";
 import * as dmpsRepo from "@/features/dmps/dmps.repository.js";
 import * as filesRepo from "@/features/files/files.repository.js";
 
-export const AI_ACTIONS = ["chat", "suggest", "regenerate-field", "generate-tasks", "checklist"] as const;
-export type AiAction = (typeof AI_ACTIONS)[number];
-
-const SYSTEMS: Record<AiAction, string> = {
-  chat:
-    "คุณเป็นผู้ช่วยร่างแผนจัดการข้อมูลวิจัย (DMP) ตอบสั้น กระชับ อ้างข้อมูลจาก tools เท่านั้น " +
-    "ทุกการแก้ไขเสนอเป็น proposal (JSON) ไม่เขียนทับ draft เอง; ไม่แนะนำ repository/licence เฉพาะเจาะจง — บอกให้ปรึกษา data steward ของสถาบัน",
-  suggest: "เสนอการแก้หลายฟิลด์พร้อมกันจาก draft ปัจจุบันหรือ proposal — คำตอบสุดท้ายเป็น JSON object ของ proposals เท่านั้น",
-  "regenerate-field": "ร่างข้อความใหม่ให้ฟิลด์เดียวตามทิศทางที่กำหนด — คำตอบสุดท้ายเป็น JSON object {path, text} เท่านั้น",
-  "generate-tasks": "ร่าง lifecycle tasks จากเวอร์ชันที่มีผลบังคับของแผน — คำตอบสุดท้ายเป็น JSON object ของรายการ tasks เท่านั้น",
-  checklist: "ร่างขั้นตอน checklist ของ task หนึ่งตาม lifecycle stage ของ output นั้น — คำตอบสุดท้ายเป็น JSON object ของ steps เท่านั้น",
-};
+import { AI_ACTIONS, type AiAction } from "./actions.js";
+import { prompts } from "./prompts/prompts.js";
 
 const updateEntrySchema = z.object({
   status: z.enum(["accepted", "rejected", "stale"]),
@@ -170,7 +160,7 @@ export class AiService {
     if (hint !== null) await emit(hint);
     const result = await this.loop.run({
       action,
-      system: SYSTEMS[action],
+      system: prompts.systems[action],
       userMessage: body.message ?? body.direction ?? `ทำ action "${action}" กับแผนนี้`,
       history: action === "chat" ? await this.history(claims.sub, dmpId) : undefined,
       ctx,
@@ -235,9 +225,8 @@ export class AiService {
 
     const result = await this.loop.run({
       action: "analyze_proposal",
-      system: SYSTEMS.suggest,
-      userMessage:
-        input.direction ?? "วิเคราะห์ proposal นี้และร่างแผนจัดการข้อมูล (maDMP JSON) พร้อม coverage report และ provenance ต่อฟิลด์",
+      system: prompts.systems.suggest,
+      userMessage: input.direction ?? prompts.defaultUserMessages.analyze_proposal,
       ctx: { claims, projectId: input.project_id, dmpId },
       signal: params.signal,
       onEvent: emit,

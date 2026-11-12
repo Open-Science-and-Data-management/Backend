@@ -39,7 +39,7 @@ export class AiTools {
     {
       def: {
         name: "read_proposal",
-        description: "อ่านข้อความทั้งหมดจาก proposal ที่แนบกับโครงการ (extracted text) — ไม่มี arguments",
+        description: "Read the full extracted text of the proposal attached to the project — no arguments",
         parametersJsonSchema: { type: "object", properties: {}, additionalProperties: false },
       },
       run: async (ctx) => {
@@ -61,7 +61,7 @@ export class AiTools {
     {
       def: {
         name: "search_proposal",
-        description: "ค้นหาใน proposal ด้วย semantic search (RAG) — arguments: { query }",
+        description: "Search inside the proposal using semantic search (RAG) — arguments: { query }",
         parametersJsonSchema: {
           type: "object",
           properties: { query: { type: "string" } },
@@ -92,7 +92,7 @@ export class AiTools {
     {
       def: {
         name: "read_draft",
-        description: "อ่าน draft ปัจจุบันของ DMP (maDMP JSON) — ไม่มี arguments",
+        description: "Read the current DMP draft (maDMP JSON) — no arguments",
         parametersJsonSchema: { type: "object", properties: {}, additionalProperties: false },
       },
       run: async (ctx) => {
@@ -106,7 +106,7 @@ export class AiTools {
       def: {
         name: "read_domain_profiles",
         description:
-          "อ่าน domain profiles ทั้งหมด (ชุดฟิลด์ metadata เฉพาะสาขา) เพื่อเลือก domain/ฟิลด์ให้เหมาะกับโครงการ — ไม่มี arguments",
+          "Read all domain profiles (discipline-specific metadata field sets) to pick a domain/fields that fit the project — no arguments",
         parametersJsonSchema: { type: "object", properties: {}, additionalProperties: false },
       },
       run: () => {

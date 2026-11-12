@@ -14,8 +14,9 @@
 | `projects-files` | projects + members + delete protection; files upload/download + docx parse + RAG chunk/embed | `foundation`, `accounts` | M2 |
 | `dmp-lifecycle` | dmps draft/submit/finalize/versions/decisions/minor-edits/rebase, reviews read model, tasks + evidence + reopen offers, notifications | `foundation`, `accounts`, `projects-files` | M3 |
 | `ai` | ReAct loop, tools 4 ตัว, SSE streaming, quota + idempotency, thread | `dmp-lifecycle`, `projects-files` (RAG), `accounts` (โควตา) | M4 |
+| `draft-integrity` | CHECK constraints บน JSONB draft-shaped columns (dmps/dmp_versions/ai_thread_entries) + drift-guard test | `dmp-lifecycle`, `ai` | หลัง M4 (ADR-0031) |
 
-**Build order:** `foundation` → `accounts` → `projects-files` → `dmp-lifecycle` → `ai`
+**Build order:** `foundation` → `accounts` → `projects-files` → `dmp-lifecycle` → `ai` → `draft-integrity`
 **Dependency direction:** ทางเดียว ไม่มี cycle — cross-feature เรียกผ่าน service inject ตรง, I/O ภายนอกผ่าน ports (`FileStorage`, `NotificationPublisher`, `AiClient`, `MailSender`)
 **แต่ละ module มี spec ของตัวเอง:** `docs/specs/SPEC-<module-id>.md` (เขียนหลัง SPEC.md นี้ผ่านการ review)
 
