@@ -15,7 +15,8 @@
     "dev": "tsx --env-file=.env src/main.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env src/database/migrate.ts up",
-    "db:seed": "tsx --env-file=.env src/database/migrate.ts seed"
+    "db:seed": "tsx --env-file=.env src/database/migrate.ts seed",
+    "seed:ai": "tsx --env-file=.env scripts/seed-ai.ts"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.3.3",

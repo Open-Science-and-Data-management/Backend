@@ -156,12 +156,16 @@ backend/
 | `PORT` | `3000` | พอร์ตที่เซิร์ฟเวอร์รับการเชื่อมต่อ |
 | `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/uni` | connection string ของ PostgreSQL |
 
-2. เติมข้อมูลตัวอย่าง (ถ้าต้องการ)
+2. เติมข้อมูลตัวอย่างสำหรับทดสอบ AI API (ถ้าต้องการ)
 
    ```bash
-   # รัน seed script เพื่อเติมข้อมูลเริ่มต้น
-   pnpm db:seed
+   # ต้องมี `pnpm dev` รันอยู่ก่อน — script ยิง HTTP ไปที่ server
+   pnpm seed:ai
    ```
+
+   สร้างบัญชี `demo-researcher` / โครงการเดโม / upload `docs/research/ข้อเสนอโครงการ FF2569.docx`
+   (parse + embed เพื่อ RAG) / แผนเปล่า แล้วพิมพ์ token + ids + ตัวอย่าง curl ให้ copy — รันซ้ำได้
+   (มีอยู่แล้วใช้ของเดิม, ไม่ embed ซ้ำ) โครงการอื่นไม่ถูกแตะ — รายละเอียดเต็มที่ `docs/SCRIPT.md`
 
 ### Tests
 
