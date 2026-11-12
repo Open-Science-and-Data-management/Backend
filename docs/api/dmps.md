@@ -93,7 +93,9 @@ Draft เป็น maDMP v3.0 แบบยังไม่สมบูรณ์ (
 - **dataset** (array, required) dataset ที่วางแผน อย่างน้อย 1 รายการ (dataset_id, title, type, access และรายละเอียดเชิงเทคนิค เช่น license, metadata, preservation)
 - **schema_version** (string, required) เวอร์ชันของ maDMP schema (default จาก `MADMP_SCHEMA_VERSION`) — field นี้ locked
 
-> ส่วนย่อยของ contributor / cost / dataset (เช่น identifier, distribution, license, technical_resource) ถูกตรวจแบบเดียวกับ maDMP v3.0 โดย domain engine ที่ `validateDraft` — กฎ cross-field เช่น วันย้อนหลัง, contact เดี่ยว, license ต้องเปิด บังคับตอน submit/finalize ไม่ใช่ตอนบันทึก draft
+> ส่วนย่อยของ contributor / cost / dataset (เช่น identifier, distribution, license, technical_resource) ถูกตรวจแบบเดียวกับ maDMP v3.0 โดย domain engine ที่ `validateDraft` — กฎ cross-field เช่น วันย้อนหลัง, contact เดียว, license ต้องเปิด บังคับตอน submit/finalize ไม่ใช่ตอนบันทึก draft
+
+> **DB integrity (ADR-0031):** Postgres บังคับรูปร่างระดับบนของ draft/snapshot เองด้วย CHECK constraint — ทุก key ระดับบนต้องอยู่ในชุด field ของ maDMP v3.0 ด้านบน (`dmps.draft`, `dmp_versions.snapshot`, `dmp_versions.based_on_snapshot`) `{}` ว่างผ่าน (แผนใหม่เริ่มเป็น `{}`) ส่วนความครบถ้วน/รูปของ nested (contributor, dataset ฯลฯ) เป็นหน้าที่ของ Zod ไม่ใช่ DB — key นอกชุดเข้า DB ไม่ได้แม้ผ่าน path ที่ไม่ผ่าน validation; key มั่วตอน save → error 500 (bug signal)
 
 ## Version lifecycle
 

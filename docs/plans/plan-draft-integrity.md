@@ -37,30 +37,30 @@
 - [x] `pnpm typecheck && pnpm lint` เขียว
 
 ### Phase 2: Tests (drift guard + บังคับจริง)
-- [ ] **Task 4: drift-guard unit test** — `tests/unit/draft-integrity.test.ts`: เทียบ `DRAFT_KEYS` ↔ `Object.keys(dmpSchema.shape)`, FieldChange key-set ↔ `diff-draft.ts`, `APPROVER_KEYS` ↔ รูปที่ approve endpoint เขียน, content key-set ↔ literal ใน `ai.service.ts` (137/141/155/249)
+- [x] **Task 4: drift-guard unit test** — `tests/unit/draft-integrity.test.ts`: เทียบ `DRAFT_KEYS` ↔ `Object.keys(dmpSchema.shape)`, FieldChange key-set ↔ `diff-draft.ts`, `APPROVER_KEYS` ↔ รูปที่ approve endpoint เขียน, content key-set ↔ literal ใน `ai.service.ts` (137/141/155/249)
   - Acceptance: test เขียวตอนตรงกัน; **จับ drift จริง** — แก้ `dmpSchema` เพิ่ม key ลอย ๆ (ทดสอบชั่วคราว) → test ต้องตาย
   - Verify: `pnpm test -- tests/unit/draft-integrity.test.ts` (S: 1-2)
   - Files: `tests/unit/draft-integrity.test.ts` (S)
   - Deps: 1-3
-- [ ] **Task 5: integration constraint test** — `tests/integration/draft-integrity.test.ts` (`skipIf(!dbReady)`): insert ผิดกฎ ≥ 1 กรณี/กฎ (key มั่ว D1, element ไม่ใช่ object D3, content ผสม kind D5, approver value ไม่ string D4 ฯลฯ) → ต้อง constraint violation; ของถูกกฎทุกกฎ (รวม `draft = '{}'`) → ผ่าน; cleanup ตาม convention
+- [x] **Task 5: integration constraint test** — `tests/integration/draft-integrity.test.ts` (`skipIf(!dbReady)`): insert ผิดกฎ ≥ 1 กรณี/กฎ (key มั่ว D1, element ไม่ใช่ object D3, content ผสม kind D5, approver value ไม่ string D4 ฯลฯ) → ต้อง constraint violation; ของถูกกฎทุกกฎ (รวม `draft = '{}'`) → ผ่าน; cleanup ตาม convention
   - Acceptance: ทุกกรณีผิดโดน, ทุกกรณีถูกผ่าน; suite อื่นไม่พัง
   - Verify: `pnpm test -- tests/integration/draft-integrity.test.ts` แล้ว `pnpm test` เต็ม
   - Files: `tests/integration/draft-integrity.test.ts` (S-M: 1)
   - Deps: 2-3, checkpoint 1
 
 ### Checkpoint: Tests
-- [ ] `pnpm test` ทั้งชุดเขียว (unit + integration + e2e เดิม 18 flows ไม่แตก)
+- [x] `pnpm test` ทั้งชุดเขียว (unit + integration + e2e เดิม 18 flows ไม่แตก)
 
 ### Phase 3: เอกสาร
-- [ ] **Task 6: เอกสารตามหลัง** — `docs/api/dmps.md` เพิ่ม note ว่า DB บังคับรูป draft/snapshot ระดับบน (key ⊆ dmpSchema) + อ้าง ADR-0031; `docs/specs/SPEC-draft-integrity.md` ติ๊กสถานะ; ตรวจว่า arc42 ไม่ต้องแก้ (โครงเดิม ไม่ใช่โครงสร้างใหม่)
+- [x] **Task 6: เอกสารตามหลัง** — `docs/api/dmps.md` เพิ่ม note ว่า DB บังคับรูป draft/snapshot ระดับบน (key ⊆ dmpSchema) + อ้าง ADR-0031; `docs/specs/SPEC-draft-integrity.md` ติ๊กสถานะ; ตรวจว่า arc42 ไม่ต้องแก้ (โครงเดิม ไม่ใช่โครงสร้างใหม่)
   - Acceptance: ผู้อ่าน dmps.md รู้ว่า DB กัน key มั่วระดับบนแล้ว และรู้ข้อยกเว้น (`{}` ผ่าน, nested เป็นหน้าที่ Zod)
   - Verify: อ่านทวน diff; ไม่มี build/test ที่แตะ
   - Files: `docs/api/dmps.md`, `docs/specs/SPEC-draft-integrity.md` (XS: 2)
   - Deps: 5
 
 ### Checkpoint: Complete
-- [ ] Success Criteria ทั้ง 5 ข้อของ SPEC-draft-integrity.md ครบ
-- [ ] พร้อม review
+- [x] Success Criteria ทั้ง 5 ข้อของ SPEC-draft-integrity.md ครบ
+- [x] พร้อม review
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

@@ -3,6 +3,8 @@
 **Map:** `docs/specs/SPEC.md` (module id `draft-integrity` — increment หลัง M4) · **Depends on:** `dmp-lifecycle` (tables + contracts), `ai` (thread kind/content)
 **ADR ที่เกี่ยว:** 0003 (hybrid data model — TD-3 ขยายเงื่อนไข), 0020 (whole-draft save), **0031 (integrity boundary — decision ชุดนี้)**
 
+> **Status: Complete (2026-11-12)** — constraint D1–D5 บังคับบน Postgres, drift-guard + integration test เขียว (plan: `plan-draft-integrity.md`)
+
 ## Objective
 ทำให้ JSONB draft-shaped columns ทุกคอลัมน์มี **CHECK constraint ระดับ Postgres** เป็นด่านสุดท้ายของรูปร่างข้อมูล — ของเสียระดับบน (key มั่ว, ชนิดก้อนผิด) เข้า DB ไม่ได้ แม้ผ่าน path ที่ไม่ผ่าน Zod (query ตรง, bug, migration) — คงสถาปัตยกรรม ADR-0003 (JSONB เดิม, ไม่ normalize, ไม่ใช้ extension) และรูป API ทุก endpoint ไม่เปลี่ยนแปลง
 
