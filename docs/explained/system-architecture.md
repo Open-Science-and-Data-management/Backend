@@ -1,19 +1,19 @@
 # System Architecture — uni-backend
 
-> เอกสารอธิบาย (not an ADR) — สังเคราะห์จาก [arc42.md](arc42.md) และ [ADR ทั้งหมด](../decisions/) มาเล่าเป็นเรื่องเดียว: ระบบนี้ออกแบบแบบไหน ทำไมถึงเลือกแบบนั้น และยอมรับต้นทุนอะไรไว้บ้าง รายละเอียดเต็มของทุกหัวข้ออยู่ที่เอกสารที่อ้างไว้เสมอ
+> เอกสารอธิบาย (not an ADR) — เราย่อเนื้อหาจาก [arc42.md](arc42.md) และ [ADR ทั้งหมด](../decisions/) มาเล่าเป็นเรื่องเดียว: ระบบนี้ออกแบบแบบไหน ทำไมถึงเลือกแบบนั้น และแลกมาด้วยต้นทุนอะไร รายละเอียดเต็มของแต่ละหัวข้ออยู่ในเอกสารที่อ้างไว้เสมอ
 
 ---
 
 ## 1. สถาปัตยกรรมระบบคืออะไร
 
-สถาปัตยกรรม = **องค์ประกอบของระบบ + ความสัมพันธ์ระหว่างองค์ประกอบ + การตัดสินใจที่แก้กลับยาก** ถ้าวาดผิดตั้งแต่แปลนบ้าน การรื้อทีหลังแพงกว่าการคิดดีตั้งแต่ต้นเสมอ เอกสารฉบับนี้จึงไม่ได้เล่าว่า "โค้ดอยู่ไฟล์ไหน" แต่เล่าว่า:
+สถาปัตยกรรม = **ระบบมีส่วนไหนบ้าง + ส่วนต่าง ๆ เชื่อมกันอย่างไร + การตัดสินใจที่ถ้าทำผิดแล้วแก้ยาก** เปรียบเหมือนแปลนบ้าน — ถ้าวาดผิดตั้งแต่แปลน ทีหลังต้องรื้อซึ่งแพงกว่าการคิดให้ดีตั้งแต่ต้นเสมอ เอกสารฉบับนี้จึงไม่ได้เล่าว่า "โค้ดอยู่ไฟล์ไหน" แต่เล่าว่า:
 
-1. ระบบประกอบด้วยส่วนใด (ซูมจากกว้างไปแคบ)
-2. แต่ละส่วนถูกเลือกเพราะอะไร — ปัญหาอะไรที่มันตอบ
-3. ทางเลือกอื่นถูกปฏิเสธเพราะอะไร
-4. ต้นทุนอะไรที่ยอมรับไว้เพื่อแลกการเลือกนั้น
+1. ระบบมีส่วนไหนบ้าง (เล่าจากภาพกว้างไปภาพใกล้)
+2. แต่ละส่วนถูกเลือกเพราะอะไร — มันแก้ปัญหาอะไรให้เรา
+3. ทางเลือกอื่นถูกตัดทิ้งเพราะอะไร
+4. เรายอมแลกต้นทุนอะไร เพื่อได้การเลือกนั้นมา
 
-ทุกการตัดสินระดับสถาปัตยกรรมของโปรเจกต์นี้จดเป็น ADR (Architecture Decision Record) ใน [`docs/decisions/`](../decisions/) — ตัวเลข ADR-xxxx ที่ปรากฏในเอกสารนี้คือลิงก์ไปยังเหตุผลฉบับเต็ม
+ทุกการตัดสินระดับสถาปัตยกรรมของโปรเจกต์นี้จดไว้เป็น ADR (Architecture Decision Record) ใน [`docs/decisions/`](../decisions/) — เมื่อไรเห็นตัวเลข ADR-xxxx ในเอกสารนี้ แปลว่ามีลิงก์ไปยังเหตุผลฉบับเต็ม
 
 ---
 
@@ -21,14 +21,14 @@
 
 Backend ของแพลตฟอร์มบริหารงานวิจัยระดับสถาบัน: นักวิจัยเขียน **DMP (Data Management Plan)** ตามมาตรฐาน maDMP v3.0, ส่งแผน institutional ให้กรรมการตรวจ → อนุมัติแล้วระบบสร้าง lifecycle tasks ให้อัตโนมัติ, มี AI assistant ช่วยร่าง, แจ้งเตือน และ export มาตรฐานสากล
 
-โจทย์สี่ข้อที่กำหนดรูปร่างสถาปัตยกรรมทั้งหมด:
+โจทย์สี่ข้อนี้คือสิ่งที่กำหนดรูปร่างของสถาปัตยกรรมทั้งหมด:
 
 | โจทย์ | ผลต่อการออกแบบ |
 | --- | --- |
-| **ประวัติห้ามหาย** (preservation) — ไม่มีทางลบแผน, submit พร้อมกันสองคนเป็นไปไม่ได้, fix ที่ตกไปต้องถูกจด | บังคับ constraint ที่ระดับฐานข้อมูล ไม่ใช่แค่โค้ด; version/diff engine เป็น pure functions ที่ test-first |
+| **ประวัติห้ามหาย** (preservation) — ไม่มีทางลบแผน, submit พร้อมกันสองคนเป็นไปไม่ได้, fix ที่ตกไปต้องถูกจด | กฎสำคัญ ๆ ต้องเป็น constraint ของฐานข้อมูลโดยตรง ไม่ใช่แค่เช็คในโค้ด; version/diff engine เป็น pure functions ที่ test-first |
 | **Scale รู้ค่าล่วงหน้า** — ~200 ผู้ใช้/วัน, peak ~2,000 (TC-1) | เครื่องเดียวพอ — ตัด Redis และระบบ distributed ทิ้งจากเส้นทางหลัก |
 | **ต้องแชร์ contract กับ frontend** (repo แยก, ไม่มี monorepo — TC-4) | zod schema ชุดเดียวเป็น source of truth; FE generate client จาก `GET /openapi-json` ตอน runtime |
-| **ความเสี่ยงจริงคือความถูกต้อง ไม่ใช่ความเร็ว** (TC-3 — คอขวดจริงคือ network: OpenRouter/Postgres) | เลือกภาษาที่ logic ถูกต้องและดูแลง่าย มากกว่าภาษาที่เร็วกว่า |
+| **ความเสี่ยงจริงคือความถูกต้อง ไม่ใช่ความเร็ว** (TC-3 — จุดที่ช้าจริงคือ network: OpenRouter/Postgres) | เลือกภาษาที่ logic ถูกต้องและดูแลง่าย มากกว่าภาษาที่เร็วกว่า |
 
 ---
 
@@ -58,27 +58,27 @@ Backend ของแพลตฟอร์มบริหารงานวิจ
 
 ## 4. การตัดสินระดับบนสุดสามข้อ
 
-ทั้งสามข้อนี้แก้กลับยากที่สุด จึงตัดสินก่อนและเป็นเหตุผลของทุกอย่างที่เหลือ
+สามข้อนี้แก้กลับยากที่สุด จึงตัดสินก่อน และเป็นเหตุผลเบื้องหลังของทุกอย่างที่เหลือ
 
 ### 4.1 Modular monolith — โปรแกรมเดียว แบ่งโมดูลภายใน (ADR-0001)
 
 **ปัญหาที่ตอบ:** flow approve → สร้าง tasks แรก → แจ้งเตือน ต้องสำเร็จพร้อมกันทั้งชุดหรือไม่สำเร็จเลย (transaction เดียว) — ถ้าแยก microservices ธุรกรรมข้ามเครือข่ายต้องพึ่ง saga/outbox pattern ซึ่งซับซ้อนเกินจำเป็นที่ scale นี้
 
 **ทำไมจึงเลือก:**
-- ผู้ใช้ ~200/วัน, peak ~2,000 — instance เดียว scale แนวตั้งรองรับได้สบาย
+- ผู้ใช้ ~200/วัน, peak ~2,000 — instance เดียวเพิ่มสเปกเครื่อง (scale แนวตั้ง) ก็รองรับได้สบาย
 - notification push และ AI SSE stream อ่าน event จาก in-process event bus — ตัด Redis ออกทั้งเส้นทาง
 - "modular" ทำให้ได้ขอบเขตโมดูลชัดเจน (9 features) โดยไม่เสียความเรียบง่ายของ process เดียว
 
 **ทางเลือกที่ปฏิเสธ:** microservices (transactional flow ยาก/แพง), serverless (cold start + state ของ SSE ไม่เหมาะ)
 
-**ต้นทุนที่ยอมรับ:** release = restart สั้น ๆ หนึ่งครั้ง (downtime เล็กน้อยทุก deploy); เงื่อนไขที่ติดมาคือ storage/notification/AI ต้องอยู่หลัง port เสมอ เผื่อวันที่ต้อง scale ออกจริง (สลับ disk→S3, in-process bus→Redis โดยไม่แตะ domain logic)
+**ต้นทุนที่ยอมรับ:** release = restart สั้น ๆ หนึ่งครั้ง (มี downtime เล็กน้อยทุก deploy); เงื่อนไขที่ติดมาคือ storage/notification/AI ต้องอยู่หลัง port เสมอ เผื่อวันที่ต้อง scale ออกจริง (สลับ disk→S3, in-process bus→Redis โดยไม่แตะ domain logic)
 
 ### 4.2 TypeScript + NestJS (ADR-0004)
 
 **ปัญหาที่ตอบ:** ต้องแชร์ type/contract กับ frontend (React 19 + TS) ให้เป็นชุดเดียวจริง ๆ และระบบมี SSE เป็นหัวใจของ AI streaming
 
 **ทำไมจึงเลือก:**
-- zod schema กลางถูกใช้ทั้ง validate runtime, infer type compile-time และ generate OpenAPI — ทำได้ครบใน ecosystem เดียว
+- zod schema กลางตัวเดียวทำได้สามอย่าง: ตรวจข้อมูลตอน runtime, infer type ตอน compile, และ generate OpenAPI — ทำครบใน ecosystem เดียว
 - Node event loop จัดการ SSE connection ค้างหลายพันรายการได้ in-the-box; JSON เป็นจุดแข็งของภาษา (draft ทั้งแผนคือ JSON ตลอดสาย)
 - NestJS บังคับโครงสร้าง (module/controller/service + DI) — ระบบมี lifecycle ซับซ้อน ต้องการโครงสร้างที่ "บังคับ" ไม่ใช่ข้อตกลงปากเปล่า (CON-1: ทุก feature มี quartet เดียวกัน)
 
@@ -94,7 +94,7 @@ Backend ของแพลตฟอร์มบริหารงานวิจ
 - **Working draft = JSONB ก้อนเดียวต่อ DMP** — ระบบ diff/validate/fold/carry ทำงานกับ JSON ทั้งก้อนตาม entity id อยู่แล้ว การฉีกเป็นตารางย่อย (DATASET/DISTRIBUTION/CONTRIBUTOR/COST) จะซ้ำซ้อนกับโครงสร้างที่ engine ใช้จริง
 - **DMP_VERSION = ตารางจริง (แถวต่อเวอร์ชัน)** — เพื่อให้ Postgres บังคับ constraint เอง:
   - `UNIQUE (dmp_id, number)` — เลขเวอร์ชันไม่ซ้ำ
-  - partial unique `UNIQUE (dmp_id) WHERE status='pending'` — submit พร้อมกันสอง request **เป็นไปไม่ได้โดยฐานข้อมูลปฏิเสธเอง** ไม่ใช่แค่ logic ใน app
+  - partial unique `UNIQUE (dmp_id) WHERE status='pending'` — submit พร้อมกันสอง request **เป็นไปไม่ได้ เพราะฐานข้อมูลปฏิเสธเอง** ไม่ใช่แค่เช็คใน logic ของ app
 - Entity ที่มี lifecycle จริง (users, credentials, projects, tasks, files, notifications, ai_thread_entries, reopen_offers, idempotency_keys) เป็นตาราง relational — รวม 13 ตาราง
 
 **ทางเลือกที่ปฏิเสธ:** normalize ทั้งหมด (ฉีก draft เป็นหลายตาราง — ยิ่งซับซ้อนกับ diff engine), document DB ทั้งหมด (เสีย constraint ระดับ DB ซึ่งห้ามหายตาม preservation)
@@ -125,11 +125,11 @@ HTTP/SSE request
 └────────────────────────────────────────────────────────────────┘
 ```
 
-**ทำไมแบ่งแบบนี้:**
-- **controller บาง** — logic ทั้งหมดอยู่ใน service ที่เรียกใช้จาก test ได้ตรง ๆ ไม่ต้องผ่าน HTTP
+**ทำแบบนี้เพราะ:**
+- **controller บาง** — logic ทั้งหมดอยู่ใน service ซึ่ง test เรียกใช้ตรง ๆ ได้ ไม่ต้องผ่าน HTTP
 - **domain engine เป็น pure functions** (CON-2, บังคับด้วย lint — `shared/domain-engine/` ห้าม import `@nestjs/*`, DB driver, HTTP client): diff → classify → fold → carry → rebase → validate → task-generator คือ **ความเสี่ยงอันดับ 2 ของระบบ** ฟังก์ชันที่ deterministic ทำให้ test-first ได้จริง (เขียน scenario ก่อนโค้ด) โดยไม่ต้องมี DB
 - **repository เป็น plain function รับ `Db`** ไม่ผูก class — ไม่มี magic, DI-free, test ง่าย
-- **ทุก I/O ที่เปลี่ยน implementation ได้ต้องผ่าน port** (ADR-0002) — กติกาที่ทำให้การตัดสิน 4.1 (monolith) ไม่กลายเป็นกับดัก: สลับ disk→S3 หรือ in-process bus→Redis ได้โดยไม่แตะ domain logic
+- **ทุก I/O ที่อาจเปลี่ยน implementation ในอนาคตต้องผ่าน port** (ADR-0002) — กติกานี้คือสิ่งที่ทำให้การตัดสิน 4.1 (monolith) ไม่กลายเป็นกับดัก: สลับ disk→S3 หรือ in-process bus→Redis ได้โดยไม่แตะ domain logic
 
 การเชื่อมข้าม feature ใช้ direct service inject เป็นค่า default (`DmpsService` inject `TasksService`) — **ไม่มี event bus ทั่วไป**; `InProcessEventBus` มีอยู่แค่ภายใน adapter ของ `NotificationPublisher` เพื่อ push หลัง commit สำเร็จเท่านั้น
 
@@ -137,7 +137,7 @@ HTTP/SSE request
 
 `src/features/`: auth, users, projects, files, dmps, reviews, tasks, notifications, ai, exports (+meta) — ทุก feature มี quartet `<name>.module/service/repository/controller.ts` เดียวกัน (CON-1) โค้ดที่ใช้ร่วมหลาย feature อยู่ `src/shared/` (contracts, domain-engine, domain-profiles, ports, adapters, config)
 
-**ทำไมจัดตาม feature ไม่ใช่ตาม layer (controller/ ทั้งหมด, service/ ทั้งหมด):** แผน DMP lifecycle กระจายความรับผิดชอบชัดเจนตาม resource — เปลี่ยนแต่ละ resource ได้โดยไม่กระทบอื่น; การหาโค้ดของ use-case หนึ่งจบในโฟลเดอร์เดียว
+**จัดตาม feature ไม่ใช่ตาม layer (controller/ ทั้งหมด, service/ ทั้งหมด) เพราะ:** แผน DMP lifecycle กระจายความรับผิดชอบชัดเจนตาม resource — เปลี่ยนแต่ละ resource ได้โดยไม่กระทบอื่น; การหาโค้ดของ use-case หนึ่งจบในโฟลเดอร์เดียว
 
 ### 5.3 Contract ชุดเดียว: zod → OpenAPI → FE generate (CON-3, ADR-0010)
 
